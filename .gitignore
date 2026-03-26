@@ -1,0 +1,126 @@
+# ============================================================
+# BridgeStay — .gitignore
+# ============================================================
+
+
+# ----------------------------------------------------------
+# Secrets & Environment Variables
+# ----------------------------------------------------------
+.env
+.env.local
+.env.*.local
+.env.development
+.env.production
+.env.staging
+*.pem
+*.key
+*.cert
+
+
+# ----------------------------------------------------------
+# Node / JavaScript / TypeScript
+# ----------------------------------------------------------
+node_modules/
+dist/
+build/
+.cache/
+.turbo/
+*.tsbuildinfo
+.next/
+out/
+
+
+# ----------------------------------------------------------
+# Python
+# ----------------------------------------------------------
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+
+
+# ----------------------------------------------------------
+# Scraper Data (session tokens and raw captures — keep local)
+# ----------------------------------------------------------
+links.txt
+ChromeData/
+scripts/xhs-sample-*.png
+scripts/*.png
+scripts/*.jpg
+
+
+# ----------------------------------------------------------
+# Company & Legal (NEVER in version control)
+# ----------------------------------------------------------
+company/
+BridgeStay LLC/
+*.pdf
+
+
+# ----------------------------------------------------------
+# Platform & Tool Metadata (keep local only)
+# ----------------------------------------------------------
+app/.manus/
+.manus/
+app/.claude/
+.claude/
+
+
+# ----------------------------------------------------------
+# OS & Editor Artifacts
+# ----------------------------------------------------------
+.DS_Store
+Thumbs.db
+desktop.ini
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+
+# ----------------------------------------------------------
+# Logs & Temp Files
+# ----------------------------------------------------------
+*.log
+*.tmp
+*.temp
+npm-debug.log*
+pnpm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+
+# ----------------------------------------------------------
+# Package Manager Lockfile Conflicts
+# (keep pnpm-lock.yaml, exclude npm's package-lock.json)
+# ----------------------------------------------------------
+package-lock.json
+
+
+# ----------------------------------------------------------
+# Archives & Exports (keep local, not in repo)
+# ----------------------------------------------------------
+archive/
+*.zip
+*.tar.gz
+*.rar
+
+
+# ----------------------------------------------------------
+# Database & Migrations (local dev files)
+# ----------------------------------------------------------
+*.sqlite
+*.sqlite3
+*.db

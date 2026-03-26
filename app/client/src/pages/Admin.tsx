@@ -1,0 +1,976 @@
+import { useState, useRef, useCallback } from "react";
+import { motion } from "framer-motion";
+import { Navbar } from "@/components/Navbar";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Textarea } from "@/components/ui/textarea";
+import { useLanguage } from "@/contexts/LanguageContext";
+import { useListings, BilingualListing } from "@/contexts/ListingsContext";
+import { useAuth } from "@/_core/hooks/useAuth";
+import { trpc } from "@/lib/trpc";
+import { toast } from "sonner";
+import { Plus, Trash2, Home, ImageIcon, DollarSign, MapPin, FileText, Tag, Shield, Pencil, X, Save, Wand2, Upload, CheckCircle2, ClipboardCheck, Building2, Eye, MessageSquare, TrendingUp, BarChart3, Star, Circle, EyeOff } from "lucide-react";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Switch } from "@/components/ui/switch";
+import { Link } from "wouter";
+import { BridgeStayLogo } from "@/components/BridgeStayLogo";
+
+const fadeInUp = {
+  initial: { opacity: 0, y: 20 },
+  animate: { opacity: 1, y: 0 },
+  transition: { duration: 0.5 }
+};
+
+const emptyFormData = {
+  imageUrl: "",
+  titleCn: "",
+  titleEn: "",
+  price: "",
+  priceNotesCn: "",
+  priceNotesEn: "",
+  addressCn: "",
+  addressEn: "",
+  areaCn: "",
+  areaEn: "",
+  descCn: "",
+  descEn: "",
+  propertyType: "",
+  tagsCn: "",
+  tagsEn: "",
+  availabilityStart: "",
+  availabilityEnd: "",
+  wechat: "",
+  email: "",
+  adminNotes: "", // Private admin notes - never exposed to frontend users
+  status: "available" as "available" | "rented" | "hidden",
+};
+
+export default function Admin() {
+  const { t, language } = useLanguage();
+  const { listings, addListing, updateListing, deleteListing } = useListings();
+  const { user, isAuthenticated } = useAuth();
+  
+  // Fetch ALL apartments from database (Admin sees everything)
+  const { data: dbApartments = [] } = trpc.apartments.list.useQuery({
+    limit: 100,
+    offset: 0,
+  });
+  
+  // Total count = context listings + database apartments
+  const totalListings = listings.length + dbApartments.length;
+  const activeListings = dbApartments.filter((a: any) => a.status === "active").length + listings.length;
+  
+  const [formData, setFormData] = useState(emptyFormData);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [isFormOpen, setIsFormOpen] = useState(false);
+  const imageInputRef = useRef<HTMLInputElement>(null);
+
+  const isAdmin = user?.role === "admin";
+
+  // Handle image upload with Base64 conversion
+  const handleImageUpload = useCallback((file: File) => {
+    if (!file.type.startsWith("image/")) {
+      toast.error(language === "cn" ? "请上传图片文件" : "Please upload an image file");
+      return;
+    }
+
+    // Check file size (max 5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error(language === "cn" ? "图片大小不能超过 5MB" : "Image size cannot exceed 5MB");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const base64Data = e.target?.result as string;
+      setFormData((prev) => ({ ...prev, imageUrl: base64Data }));
+      toast.success(language === "cn" ? "图片已上传" : "Image uploaded");
+    };
+    reader.onerror = () => {
+      toast.error(language === "cn" ? "图片读取失败" : "Failed to read image");
+    };
+    reader.readAsDataURL(file);
+  }, [language]);
+
+  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target;
+    setFormData((prev) => ({ ...prev, [name]: value }));
+  };
+
+  const resetForm = () => {
+    setFormData(emptyFormData);
+    setEditingId(null);
+  };
+
+  const handleEdit = (listing: BilingualListing) => {
+    // Pre-fill form with existing data
+    setFormData({
+      imageUrl: listing.imageUrl || "",
+      titleCn: listing.title.cn,
+      titleEn: listing.title.en,
+      price: listing.price.amount.toString(),
+      priceNotesCn: listing.price.notes.cn,
+      priceNotesEn: listing.price.notes.en,
+      addressCn: listing.location.address.cn,
+      addressEn: listing.location.address.en,
+      areaCn: listing.location.area.cn,
+      areaEn: listing.location.area.en,
+      descCn: listing.description.cn,
+      descEn: listing.description.en,
+      propertyType: listing.propertyType,
+      tagsCn: listing.tags.map(t => t.cn).join(", "),
+      tagsEn: listing.tags.map(t => t.en).join(", "),
+      availabilityStart: listing.availability.start || "",
+      availabilityEnd: listing.availability.end || "",
+      wechat: listing.contact?.wechat || "",
+      email: listing.contact?.email || "",
+      adminNotes: listing.adminNotes || "",
+      status: listing.status || "available",
+    });
+    setEditingId(listing.id);
+    setIsFormOpen(true);
+    // Scroll to form
+    window.scrollTo({ top: 200, behavior: "smooth" });
+  };
+
+  const handleCancelEdit = () => {
+    resetForm();
+    setIsFormOpen(false);
+  };
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    
+    // Parse tags
+    const tagsCn = formData.tagsCn.split(",").map((t) => t.trim()).filter(Boolean);
+    const tagsEn = formData.tagsEn.split(",").map((t) => t.trim()).filter(Boolean);
+    const tags = tagsCn.map((cn, i) => ({
+      cn,
+      en: tagsEn[i] || cn
+    }));
+
+    const listingData: BilingualListing = {
+      id: editingId || `listing_${Date.now()}`,
+      title: {
+        cn: formData.titleCn,
+        en: formData.titleEn || formData.titleCn
+      },
+      location: {
+        address: {
+          cn: formData.addressCn,
+          en: formData.addressEn || formData.addressCn
+        },
+        area: {
+          cn: formData.areaCn,
+          en: formData.areaEn || formData.areaCn
+        }
+      },
+      price: {
+        amount: parseFloat(formData.price) || 0,
+        currency: "USD",
+        notes: {
+          cn: formData.priceNotesCn,
+          en: formData.priceNotesEn || formData.priceNotesCn
+        }
+      },
+      propertyType: formData.propertyType,
+      availability: {
+        start: formData.availabilityStart || "Immediate",
+        end: formData.availabilityEnd || ""
+      },
+      description: {
+        cn: formData.descCn,
+        en: formData.descEn || formData.descCn
+      },
+      tags,
+      imageUrl: formData.imageUrl || undefined,
+      contact: {
+        wechat: formData.wechat || undefined,
+        email: formData.email || undefined
+      },
+      adminNotes: formData.adminNotes || undefined,
+      status: formData.status,
+    };
+
+    if (editingId) {
+      updateListing(editingId, listingData);
+      toast.success(language === "cn" ? "房源已更新" : "Listing updated");
+    } else {
+      addListing(listingData);
+      toast.success(t("admin.success"));
+    }
+    
+    resetForm();
+    setIsFormOpen(false);
+  };
+
+  const handleDelete = (id: string) => {
+    if (window.confirm(t("admin.deleteConfirm"))) {
+      deleteListing(id);
+      toast.success(language === "cn" ? "房源已删除" : "Listing deleted");
+    }
+  };
+
+  const handleAddNew = () => {
+    resetForm();
+    setIsFormOpen(true);
+    window.scrollTo({ top: 200, behavior: "smooth" });
+  };
+
+  // Check if user is admin
+  if (!isAuthenticated) {
+    return (
+      <div className="min-h-screen bg-warm-cream">
+        <Navbar />
+        <div className="container py-20">
+          <Card className="max-w-md mx-auto">
+            <CardContent className="p-8 text-center">
+              <Shield className="w-16 h-16 mx-auto mb-4 text-gray-400" />
+              <h2 className="text-xl font-semibold mb-2">
+                {language === "cn" ? "需要登录" : "Login Required"}
+              </h2>
+              <p className="text-gray-600">
+                {language === "cn" ? "请先登录以访问管理后台" : "Please login to access the admin dashboard"}
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAdmin) {
+    return (
+      <div className="min-h-screen bg-warm-cream">
+        <Navbar />
+        <div className="container py-20">
+          <Card className="max-w-md mx-auto">
+            <CardContent className="p-8 text-center">
+              <Shield className="w-16 h-16 mx-auto mb-4 text-gray-400" />
+              <h2 className="text-xl font-semibold mb-2">
+                {language === "cn" ? "权限不足" : "Access Denied"}
+              </h2>
+              <p className="text-gray-600">
+                {language === "cn" ? "只有管理员可以访问此页面" : "Only administrators can access this page"}
+              </p>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-warm-cream">
+      <Navbar />
+      
+      <main className="container py-12">
+        <motion.div {...fadeInUp}>
+          {/* Header */}
+          <div className="flex items-center justify-between gap-4 mb-8">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-primary to-orange-400 flex items-center justify-center">
+                <Shield className="w-6 h-6 text-white" />
+              </div>
+              <div>
+                <h1 className="text-3xl font-bold text-gray-900">欢迎回来，管理员</h1>
+                <p className="text-gray-600">超级管理员后台 · 管理全站房源</p>
+              </div>
+            </div>
+            <div className="flex gap-3">
+              <Link href="/admin/generator">
+                <Button
+                  variant="outline"
+                  className="h-12 px-6 rounded-xl font-medium border-primary text-primary hover:bg-primary/5"
+                >
+                  <Wand2 className="w-5 h-5 mr-2" />
+                  AI 生成器
+                </Button>
+              </Link>
+              <Link href="/admin/review">
+                <Button
+                  variant="outline"
+                  className="h-12 px-6 rounded-xl font-medium border-amber-500 text-amber-600 hover:bg-amber-50"
+                >
+                  <ClipboardCheck className="w-5 h-5 mr-2" />
+                  审核队列
+                </Button>
+              </Link>
+              {!isFormOpen && (
+                <Button
+                  onClick={handleAddNew}
+                  className="h-12 px-6 rounded-xl btn-warm text-white font-medium"
+                >
+                  <Plus className="w-5 h-5 mr-2" />
+                  录入新房源
+                </Button>
+              )}
+            </div>
+          </div>
+
+          {/* Stats Cards */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+            <Card className="border-0 shadow-soft">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-blue-100 flex items-center justify-center">
+                    <Building2 className="w-5 h-5 text-blue-600" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold text-gray-900">{totalListings}</p>
+                    <p className="text-sm text-gray-500">房源总数</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="border-0 shadow-soft">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-green-100 flex items-center justify-center">
+                    <CheckCircle2 className="w-5 h-5 text-green-600" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold text-gray-900">{activeListings}</p>
+                    <p className="text-sm text-gray-500">已上架</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="border-0 shadow-soft">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center">
+                    <MessageSquare className="w-5 h-5 text-amber-600" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold text-gray-900">0</p>
+                    <p className="text-sm text-gray-500">待处理咨询</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            <Card className="border-0 shadow-soft">
+              <CardContent className="p-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded-xl bg-purple-100 flex items-center justify-center">
+                    <Eye className="w-5 h-5 text-purple-600" />
+                  </div>
+                  <div>
+                    <p className="text-2xl font-bold text-gray-900">--</p>
+                    <p className="text-sm text-gray-500">全站浏览量</p>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Quick Actions */}
+          <div className="flex gap-3 mb-8">
+            <Link href="/apartments">
+              <Button variant="outline" className="h-10 px-4 rounded-xl">
+                <BarChart3 className="w-4 h-4 mr-2" />
+                数据概览
+              </Button>
+            </Link>
+          </div>
+
+          <div className="grid lg:grid-cols-2 gap-8">
+            {/* Add/Edit Listing Form */}
+            {isFormOpen && (
+              <Card className="border-0 shadow-soft">
+                <CardHeader>
+                  <div className="flex items-center justify-between">
+                    <CardTitle className="flex items-center gap-2">
+                      {editingId ? (
+                        <>
+                          <Pencil className="w-5 h-5 text-primary" />
+                          编辑房源
+                        </>
+                      ) : (
+                        <>
+                          <Plus className="w-5 h-5 text-primary" />
+                          录入新房源
+                        </>
+                      )}
+                    </CardTitle>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={handleCancelEdit}
+                      className="text-gray-500 hover:text-gray-700"
+                    >
+                      <X className="w-5 h-5" />
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <form onSubmit={handleSubmit} className="space-y-6">
+                    {/* Image Upload */}
+                    <div className="space-y-2">
+                      <Label className="flex items-center gap-2">
+                        <ImageIcon className="w-4 h-4" />
+                        {language === "cn" ? "上传房源图片" : "Upload Listing Image"}
+                      </Label>
+                      <input
+                        type="file"
+                        ref={imageInputRef}
+                        accept="image/*"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) handleImageUpload(file);
+                        }}
+                        className="hidden"
+                      />
+                      
+                      {formData.imageUrl ? (
+                        /* Show image preview */
+                        <div className="relative">
+                          <img
+                            src={formData.imageUrl}
+                            alt="Listing preview"
+                            className="w-full h-40 object-cover rounded-xl border border-border"
+                          />
+                          <div className="absolute top-2 right-2 flex gap-2">
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="secondary"
+                              onClick={() => imageInputRef.current?.click()}
+                              className="bg-white/90 hover:bg-white"
+                            >
+                              <Upload className="w-4 h-4 mr-1" />
+                              {language === "cn" ? "更换" : "Change"}
+                            </Button>
+                            <Button
+                              type="button"
+                              size="sm"
+                              variant="destructive"
+                              onClick={() => setFormData((prev) => ({ ...prev, imageUrl: "" }))}
+                              className="bg-red-500/90 hover:bg-red-500"
+                            >
+                              <X className="w-4 h-4" />
+                            </Button>
+                          </div>
+                          {formData.imageUrl.startsWith("data:") && (
+                            <div className="absolute bottom-2 left-2">
+                              <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-green-500 text-white">
+                                <CheckCircle2 className="w-3 h-3 mr-1" />
+                                {language === "cn" ? "已上传" : "Uploaded"}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        /* Show upload button */
+                        <div
+                          onClick={() => imageInputRef.current?.click()}
+                          className="border-2 border-dashed border-gray-300 rounded-xl p-6 text-center cursor-pointer hover:border-primary hover:bg-primary/5 transition-colors"
+                        >
+                          <Upload className="w-10 h-10 text-gray-400 mx-auto mb-2" />
+                          <p className="text-sm font-medium text-gray-700">
+                            {language === "cn" ? "点击上传房源图片" : "Click to upload listing image"}
+                          </p>
+                          <p className="text-xs text-gray-500 mt-1">
+                            {language === "cn" ? "支持 JPG, PNG, WebP，最大 5MB" : "Supports JPG, PNG, WebP, max 5MB"}
+                          </p>
+                        </div>
+                      )}
+                      
+                      {/* Fallback: Manual URL input */}
+                      <div className="pt-2">
+                        <Label className="text-xs text-gray-500">
+                          {language === "cn" ? "或输入图片路径" : "Or enter image path"}
+                        </Label>
+                        <Input
+                          name="imageUrl"
+                          value={formData.imageUrl.startsWith("data:") ? "" : formData.imageUrl}
+                          onChange={handleInputChange}
+                          placeholder="/images/house1.jpg"
+                          className="h-10 rounded-lg mt-1"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Bilingual Title */}
+                    <div className="grid md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>{t("admin.titleCn")} *</Label>
+                        <Input
+                          name="titleCn"
+                          value={formData.titleCn}
+                          onChange={handleInputChange}
+                          required
+                          className="h-12 rounded-xl"
+                          placeholder="盐湖城 1B1B 公寓转租"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>{t("admin.titleEn")}</Label>
+                        <Input
+                          name="titleEn"
+                          value={formData.titleEn}
+                          onChange={handleInputChange}
+                          className="h-12 rounded-xl"
+                          placeholder="Salt Lake City 1B1B Sublease"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Price */}
+                    <div className="space-y-2">
+                      <Label className="flex items-center gap-2">
+                        <DollarSign className="w-4 h-4" />
+                        {t("admin.price")} *
+                      </Label>
+                      <Input
+                        name="price"
+                        type="number"
+                        value={formData.price}
+                        onChange={handleInputChange}
+                        required
+                        className="h-12 rounded-xl"
+                        placeholder="1500"
+                      />
+                    </div>
+
+                    {/* Price Notes */}
+                    <div className="grid md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>{t("admin.priceNotesCn")}</Label>
+                        <Input
+                          name="priceNotesCn"
+                          value={formData.priceNotesCn}
+                          onChange={handleInputChange}
+                          className="h-12 rounded-xl"
+                          placeholder="首月优惠$300"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>{t("admin.priceNotesEn")}</Label>
+                        <Input
+                          name="priceNotesEn"
+                          value={formData.priceNotesEn}
+                          onChange={handleInputChange}
+                          className="h-12 rounded-xl"
+                          placeholder="$300 off first month"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Address */}
+                    <div className="space-y-2">
+                      <Label className="flex items-center gap-2">
+                        <MapPin className="w-4 h-4" />
+                        {t("admin.addressCn")} *
+                      </Label>
+                      <Input
+                        name="addressCn"
+                        value={formData.addressCn}
+                        onChange={handleInputChange}
+                        required
+                        className="h-12 rounded-xl"
+                        placeholder="123 Main St, Salt Lake City, UT"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>{t("admin.addressEn")}</Label>
+                      <Input
+                        name="addressEn"
+                        value={formData.addressEn}
+                        onChange={handleInputChange}
+                        className="h-12 rounded-xl"
+                        placeholder="123 Main St, Salt Lake City, UT"
+                      />
+                    </div>
+
+                    {/* Area */}
+                    <div className="grid md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>{t("admin.areaCn")} *</Label>
+                        <Input
+                          name="areaCn"
+                          value={formData.areaCn}
+                          onChange={handleInputChange}
+                          required
+                          className="h-12 rounded-xl"
+                          placeholder="市中心"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>{t("admin.areaEn")}</Label>
+                        <Input
+                          name="areaEn"
+                          value={formData.areaEn}
+                          onChange={handleInputChange}
+                          className="h-12 rounded-xl"
+                          placeholder="Downtown"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Property Type */}
+                    <div className="space-y-2">
+                      <Label>{t("admin.propertyType")} *</Label>
+                      <Input
+                        name="propertyType"
+                        value={formData.propertyType}
+                        onChange={handleInputChange}
+                        required
+                        className="h-12 rounded-xl"
+                        placeholder="1B1B / 2B2B / Studio"
+                      />
+                    </div>
+
+                    {/* Description */}
+                    <div className="space-y-2">
+                      <Label className="flex items-center gap-2">
+                        <FileText className="w-4 h-4" />
+                        {t("admin.descCn")}
+                      </Label>
+                      <Textarea
+                        name="descCn"
+                        value={formData.descCn}
+                        onChange={handleInputChange}
+                        className="rounded-xl min-h-[100px]"
+                        placeholder="房源描述..."
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>{t("admin.descEn")}</Label>
+                      <Textarea
+                        name="descEn"
+                        value={formData.descEn}
+                        onChange={handleInputChange}
+                        className="rounded-xl min-h-[100px]"
+                        placeholder="Property description..."
+                      />
+                    </div>
+
+                    {/* Tags */}
+                    <div className="grid md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label className="flex items-center gap-2">
+                          <Tag className="w-4 h-4" />
+                          {language === "cn" ? "中文标签" : "Chinese Tags"}
+                        </Label>
+                        <Input
+                          name="tagsCn"
+                          value={formData.tagsCn}
+                          onChange={handleInputChange}
+                          className="h-12 rounded-xl"
+                          placeholder="急转租, 滑雪, 可养宠物"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>{language === "cn" ? "英文标签" : "English Tags"}</Label>
+                        <Input
+                          name="tagsEn"
+                          value={formData.tagsEn}
+                          onChange={handleInputChange}
+                          className="h-12 rounded-xl"
+                          placeholder="Urgent, Skiing, Pet-friendly"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Availability */}
+                    <div className="grid md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>{language === "cn" ? "开始日期" : "Start Date"}</Label>
+                        <Input
+                          name="availabilityStart"
+                          type="date"
+                          value={formData.availabilityStart}
+                          onChange={handleInputChange}
+                          className="h-12 rounded-xl"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>{language === "cn" ? "结束日期" : "End Date"}</Label>
+                        <Input
+                          name="availabilityEnd"
+                          type="date"
+                          value={formData.availabilityEnd}
+                          onChange={handleInputChange}
+                          className="h-12 rounded-xl"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Contact Info */}
+                    <div className="grid md:grid-cols-2 gap-4">
+                      <div className="space-y-2">
+                        <Label>{language === "cn" ? "微信号" : "WeChat ID"}</Label>
+                        <Input
+                          name="wechat"
+                          value={formData.wechat}
+                          onChange={handleInputChange}
+                          className="h-12 rounded-xl"
+                          placeholder="wx_id_123"
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label>{language === "cn" ? "邮箱" : "Email"}</Label>
+                        <Input
+                          name="email"
+                          type="email"
+                          value={formData.email}
+                          onChange={handleInputChange}
+                          className="h-12 rounded-xl"
+                          placeholder="host@email.com"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Status Dropdown */}
+                    <div className="space-y-2">
+                      <Label>{language === "cn" ? "房源状态" : "Listing Status"}</Label>
+                      <Select
+                        value={formData.status}
+                        onValueChange={(value: "available" | "rented" | "hidden") => 
+                          setFormData((prev) => ({ ...prev, status: value }))
+                        }
+                      >
+                        <SelectTrigger className="h-12 rounded-xl">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="available">
+                            <span className="flex items-center gap-2">
+                              <Circle className="w-2 h-2 fill-green-500 text-green-500" />
+                              {language === "cn" ? "招租中" : "Available"}
+                            </span>
+                          </SelectItem>
+                          <SelectItem value="rented">
+                            <span className="flex items-center gap-2">
+                              <Circle className="w-2 h-2 fill-gray-500 text-gray-500" />
+                              {language === "cn" ? "已出租" : "Rented"}
+                            </span>
+                          </SelectItem>
+                          <SelectItem value="hidden">
+                            <span className="flex items-center gap-2">
+                              <EyeOff className="w-3 h-3 text-red-500" />
+                              {language === "cn" ? "已下架" : "Hidden"}
+                            </span>
+                          </SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Admin Notes - Private, never exposed to users */}
+                    <div className="space-y-2 p-4 bg-yellow-50 border border-yellow-200 rounded-xl">
+                      <Label className="flex items-center gap-2 text-yellow-800">
+                        <Shield className="w-4 h-4" />
+                        {language === "cn" ? "内部备注 (仅管理员可见)" : "Private Admin Notes"}
+                      </Label>
+                      <Textarea
+                        name="adminNotes"
+                        value={formData.adminNotes}
+                        onChange={handleInputChange}
+                        className="min-h-[100px] rounded-xl bg-white"
+                        placeholder={language === "cn" 
+                          ? "记录房东真实微信、底价、注意事项等敏感信息..."
+                          : "Record landlord's real WeChat, base price, notes..."
+                        }
+                      />
+                      <p className="text-xs text-yellow-700">
+                        {language === "cn" 
+                          ? "ℹ️ 此备注仅在管理后台可见，不会在前端页面或 JSON 中暴露"
+                          : "ℹ️ This note is only visible in admin dashboard, never exposed to frontend or JSON"
+                        }
+                      </p>
+                    </div>
+
+                    <Button
+                      type="submit"
+                      className="w-full h-14 rounded-xl btn-warm text-white font-medium"
+                    >
+                      {editingId ? (
+                        <>
+                          <Save className="w-5 h-5 mr-2" />
+                          {language === "cn" ? "保存修改" : "Save Changes"}
+                        </>
+                      ) : (
+                        <>
+                          <Plus className="w-5 h-5 mr-2" />
+                          {t("admin.submit")}
+                        </>
+                      )}
+                    </Button>
+                  </form>
+                </CardContent>
+              </Card>
+            )}
+
+            {/* Existing Listings */}
+            <Card className={`border-0 shadow-soft ${!isFormOpen ? "lg:col-span-2" : ""}`}>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <Home className="w-5 h-5 text-primary" />
+                  {t("admin.manageListing")}
+                  <span className="ml-2 text-sm font-normal text-gray-500">
+                    ({listings.length} {language === "cn" ? "条房源" : "listings"})
+                  </span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                {listings.length === 0 ? (
+                  <div className="text-center py-12 text-gray-500">
+                    暂无房源数据
+                  </div>
+                ) : (
+                  <div className={`grid gap-4 ${!isFormOpen ? "md:grid-cols-2 lg:grid-cols-3" : ""} max-h-[600px] overflow-y-auto pr-2`}>
+                    {listings.map((listing) => (
+                      <div
+                        key={listing.id}
+                        className={`p-4 rounded-xl transition-colors ${
+                          listing.status === 'rented' ? 'bg-gray-200 opacity-70' :
+                          listing.status === 'hidden' ? 'bg-gray-100 opacity-50' :
+                          'bg-gray-50 hover:bg-gray-100'
+                        }`}
+                      >
+                        {/* Status Badge */}
+                        {listing.status === 'rented' && (
+                          <div className="mb-2">
+                            <span className="px-2 py-1 text-xs font-medium rounded-full bg-gray-500 text-white">
+                              已出租
+                            </span>
+                          </div>
+                        )}
+                        {listing.status === 'hidden' && (
+                          <div className="mb-2">
+                            <span className="px-2 py-1 text-xs font-medium rounded-full bg-red-500 text-white">
+                              已下架
+                            </span>
+                          </div>
+                        )}
+                        
+                        <div className="flex items-start justify-between gap-4">
+                          <div className="flex-1 min-w-0">
+                            <h3 className="font-semibold text-gray-900 truncate">
+                              {listing.title[language]}
+                            </h3>
+                            <p className="text-sm text-gray-600 truncate">
+                              {listing.location.address[language]}
+                            </p>
+                            <div className="flex items-center gap-2 mt-2">
+                              <span className="text-primary font-bold">
+                                ${listing.price.amount}
+                              </span>
+                              <span className="text-gray-500 text-sm">
+                                {language === "cn" ? "/月" : "/mo"}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="flex gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleEdit(listing)}
+                              className="text-blue-500 hover:text-blue-600 hover:bg-blue-50 border-blue-200"
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              onClick={() => handleDelete(listing.id)}
+                              className="text-red-500 hover:text-red-600 hover:bg-red-50 border-red-200"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </Button>
+                          </div>
+                        </div>
+                        
+                        {/* Admin Controls */}
+                        <div className="mt-3 pt-3 border-t border-gray-200 space-y-2">
+                          {/* Featured Toggle */}
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2">
+                              <Star className={`w-4 h-4 ${listing.isFeatured ? 'text-yellow-500 fill-yellow-500' : 'text-gray-400'}`} />
+                              <span className="text-sm text-gray-600">精选推荐</span>
+                            </div>
+                            <Switch
+                              checked={listing.isFeatured || false}
+                              onCheckedChange={(checked) => {
+                                updateListing(listing.id, { ...listing, isFeatured: checked });
+                                toast.success(checked ? '已设为精选' : '已取消精选');
+                              }}
+                              className="data-[state=checked]:bg-yellow-500"
+                            />
+                          </div>
+                          
+                          {/* Status Dropdown */}
+                          <div className="flex items-center justify-between">
+                            <span className="text-sm text-gray-600">状态</span>
+                            <Select
+                              value={listing.status || 'available'}
+                              onValueChange={(value: 'available' | 'rented' | 'hidden') => {
+                                updateListing(listing.id, { ...listing, status: value });
+                                const statusLabels = { available: '招租中', rented: '已出租', hidden: '已下架' };
+                                toast.success(`状态已更新为: ${statusLabels[value]}`);
+                              }}
+                            >
+                              <SelectTrigger className="w-28 h-8 text-sm">
+                                <SelectValue />
+                              </SelectTrigger>
+                              <SelectContent>
+                                <SelectItem value="available">
+                                  <span className="flex items-center gap-1.5">
+                                    <Circle className="w-2 h-2 fill-green-500 text-green-500" />
+                                    招租中
+                                  </span>
+                                </SelectItem>
+                                <SelectItem value="rented">
+                                  <span className="flex items-center gap-1.5">
+                                    <Circle className="w-2 h-2 fill-gray-500 text-gray-500" />
+                                    已出租
+                                  </span>
+                                </SelectItem>
+                                <SelectItem value="hidden">
+                                  <span className="flex items-center gap-1.5">
+                                    <EyeOff className="w-3 h-3 text-red-500" />
+                                    下架
+                                  </span>
+                                </SelectItem>
+                              </SelectContent>
+                            </Select>
+                          </div>
+                        </div>
+                        
+                        <div className="flex flex-wrap gap-1 mt-3">
+                          {listing.tags.map((tag, i) => (
+                            <span
+                              key={i}
+                              className="px-2 py-0.5 text-xs rounded-full bg-orange-100 text-orange-700"
+                            >
+                              {tag[language]}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+          </div>
+        </motion.div>
+      </main>
+
+      {/* Footer */}
+      <footer className="py-8 border-t border-gray-200 bg-white mt-12">
+        <div className="container">
+          <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+            <BridgeStayLogo size="sm" />
+            <p className="text-sm text-gray-500">
+              {t("footer.copyright")}
+            </p>
+          </div>
+        </div>
+      </footer>
+    </div>
+  );
+}
