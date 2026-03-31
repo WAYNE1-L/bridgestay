@@ -35,23 +35,35 @@ export interface BilingualListing {
   };
   propertyType: string;
   availability: {
-    start: string;
-    end: string;
+    start: string;  // ISO date string or "Immediate"
+    end: string;    // ISO date string or ""
   };
   description: BilingualText;
   tags: BilingualText[];
-  imageUrl?: string; // Primary image (backward compatible)
-  images?: string[]; // Multiple images for carousel
+
+  // ── Property details (optional — fill in what you know) ──────────────────
+  bedrooms?: number | null;       // 0 = studio
+  bathrooms?: number | null;
+  squareFeet?: number | null;
+  petsAllowed?: boolean;
+  parkingIncluded?: boolean;
+  noSsnRequired?: boolean;        // defaults to true for all BridgeStay listings
+
+  // ── Images ───────────────────────────────────────────────────────────────
+  images?: string[];    // Preferred: array of URLs for carousel
+  imageUrl?: string;    // Legacy fallback (Supabase scraper output)
+
+  // ── Contact / admin ──────────────────────────────────────────────────────
   contact: ContactInfo;
-  isFeatured?: boolean; // Featured listings appear on homepage
-  status?: ListingStatus; // Listing status: available, rented, hidden
-  adminNotes?: string; // Private admin notes (never exposed to frontend users)
-  sourceLink?: string; // Original listing source URL (admin only, not shown to users)
-  reviewStatus?: ReviewStatus; // Review status for moderation
-  submittedBy?: number; // User ID who submitted the listing
-  reviewedBy?: number; // Admin ID who reviewed the listing
-  reviewedAt?: string; // Timestamp of review
-  rejectionReason?: string; // Reason for rejection
+  isFeatured?: boolean;           // Pinned to top of list
+  status?: ListingStatus;
+  adminNotes?: string;            // Never exposed to frontend users
+  sourceLink?: string;            // Original source URL (admin only)
+  reviewStatus?: ReviewStatus;
+  submittedBy?: number;
+  reviewedBy?: number;
+  reviewedAt?: string;
+  rejectionReason?: string;
 }
 
 interface ListingsContextType {
@@ -166,6 +178,71 @@ const defaultListings: BilingualListing[] = [
       "https://images.unsplash.com/photo-1484154218962-a197022b5858?w=800",
       "https://images.unsplash.com/photo-1493809842364-78817add7ffb?w=800"
     ],
+    isFeatured: true,
+    reviewStatus: "approved"
+  },
+
+  // ── Template: copy this block to add a new listing ───────────────────────
+  // Required fields: id (unique), title, location, price, description,
+  //   propertyType, availability, contact
+  // Optional but recommended: images, bedrooms, bathrooms, tags, petsAllowed,
+  //   parkingIncluded, noSsnRequired, isFeatured
+  {
+    id: "slc_003",
+    title: {
+      cn: "University of Utah 旁 2B2B 精装公寓 · 无需SSN",
+      en: "Near University of Utah — Furnished 2BR/2BA, No SSN Required"
+    },
+    location: {
+      address: {
+        cn: "850 E 900 S, Salt Lake City, UT 84105",
+        en: "850 E 900 S, Salt Lake City, UT 84105"
+      },
+      area: {
+        cn: "9th & 9th / 犹他大学周边",
+        en: "9th & 9th / Near University of Utah"
+      }
+    },
+    price: {
+      amount: 1650,
+      currency: "USD",
+      notes: {
+        cn: "月租，含水电暖气，停车位另付$75/月",
+        en: "/month, water & heat included, parking +$75/mo"
+      }
+    },
+    propertyType: "2B2B",
+    bedrooms: 2,
+    bathrooms: 2,
+    squareFeet: 920,
+    petsAllowed: false,
+    parkingIncluded: false,
+    noSsnRequired: true,
+    availability: {
+      start: "2026-05-01",
+      end: "2027-04-30"
+    },
+    description: {
+      cn: "步行10分钟到犹他大学。精装修，全套家具，含厨房电器。两个卧室均有独立卫浴。水电暖气全包，省心省力。接受护照+I-20，无需SSN或信用记录，欢迎留学生。",
+      en: "10-minute walk to the University of Utah. Fully furnished with kitchen appliances. Both bedrooms have en-suite bathrooms. Water and heat included. Accepts passport + I-20 in lieu of SSN — perfect for international students."
+    },
+    tags: [
+      { cn: "近UofU", en: "Near UofU" },
+      { cn: "精装修", en: "Furnished" },
+      { cn: "水电全包", en: "Utilities Included" },
+      { cn: "无需SSN", en: "No SSN" },
+      { cn: "独立卫浴", en: "En-suite Baths" }
+    ],
+    images: [
+      "https://images.unsplash.com/photo-1560448204-e02f11c3d0e2?w=800",
+      "https://images.unsplash.com/photo-1484154218962-a197022b5858?w=800",
+      "https://images.unsplash.com/photo-1555041469-a586c61ea9bc?w=800",
+      "https://images.unsplash.com/photo-1507089947368-19c1da9775ae?w=800"
+    ],
+    contact: {
+      wechat: "bridgestay_slc",
+      email: "listings@bridgestay.com"
+    },
     isFeatured: true,
     reviewStatus: "approved"
   }

@@ -6,6 +6,7 @@ import { MapView } from "@/components/Map";
 import { trpc } from "@/lib/trpc";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { getLoginUrl } from "@/const";
+import { useListings } from "@/contexts/ListingsContext";
 import { motion } from "framer-motion";
 import {
   MapPin,
@@ -44,40 +45,106 @@ export default function ApartmentDetail() {
   const [, navigate] = useLocation();
   const { isAuthenticated } = useAuth();
   const mapRef = useRef<google.maps.Map | null>(null);
-  
+
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
-  
-  const { data: apartment, isLoading } = trpc.apartments.getById.useQuery(
-    { id: parseInt(params.id || "0") },
-    { enabled: !!params.id }
+
+  // Detect context listings (IDs prefixed with "ctx_" come from ListingsContext,
+  // not the DB — e.g. ctx_slc_001. These must be resolved locally, not via tRPC.)
+  const isContextId = !!params.id?.startsWith("ctx_");
+  const rawContextId = isContextId ? params.id!.replace(/^ctx_/, "") : null;
+
+  // Always call useListings (hooks must be called unconditionally)
+  const { allListings } = useListings();
+
+  // Look up the context listing and map it to the DB apartment shape so the
+  // rest of the template can render it without any further changes.
+  const contextListing = rawContextId
+    ? allListings.find((l) => l.id === rawContextId)
+    : null;
+
+  const mappedContextApartment = contextListing
+    ? {
+        id: contextListing.id,
+        title: contextListing.title.en,
+        address: contextListing.location.address.en,
+        city: contextListing.location.area.en,
+        state: "UT",
+        zipCode: "",
+        monthlyRent: contextListing.price.amount,
+        securityDeposit: 0,
+        bedrooms: contextListing.bedrooms ?? null,
+        bathrooms: contextListing.bathrooms ?? null,
+        squareFeet: contextListing.squareFeet ?? null,
+        description: contextListing.description.en,
+        // Prefer images[] array; fall back to legacy imageUrl (Supabase listings)
+        images: JSON.stringify(
+          contextListing.images?.length
+            ? contextListing.images
+            : contextListing.imageUrl
+            ? [contextListing.imageUrl]
+            : []
+        ),
+        amenities: JSON.stringify(
+          contextListing.tags?.map((t) => t.en) ?? []
+        ),
+        utilitiesIncluded: JSON.stringify([]),
+        petsAllowed: contextListing.petsAllowed ?? null,
+        petDeposit: null,
+        petRent: null,
+        parkingIncluded: contextListing.parkingIncluded ?? null,
+        parkingType: null,
+        parkingFee: null,
+        latitude: null,
+        longitude: null,
+        noSsnRequired: contextListing.noSsnRequired ?? true,
+        noCreditCheckRequired: true,
+        acceptsInternationalStudents: true,
+        minLeaseTerm: null,
+        maxLeaseTerm: null,
+        availableFrom: contextListing.availability.start,
+        viewCount: 0,
+      }
+    : null;
+
+  // tRPC DB query — disabled for context IDs to avoid the parseInt("ctx_…") = NaN bug
+  const { data: dbApartment, isLoading: dbLoading } = trpc.apartments.getById.useQuery(
+    { id: isContextId ? 0 : parseInt(params.id || "0") },
+    { enabled: !isContextId && !!params.id }
   );
-  
+
+  const apartment = isContextId ? mappedContextApartment : dbApartment;
+  const isLoading = isContextId ? false : dbLoading;
+
   const { data: isSaved } = trpc.apartments.isSaved.useQuery(
-    { apartmentId: parseInt(params.id || "0") },
-    { enabled: !!params.id && isAuthenticated }
+    { apartmentId: isContextId ? 0 : parseInt(params.id || "0") },
+    { enabled: !isContextId && !!params.id && isAuthenticated }
   );
-  
+
   const saveMutation = trpc.apartments.save.useMutation({
     onSuccess: () => toast.success("Apartment saved!"),
   });
-  
+
   const unsaveMutation = trpc.apartments.unsave.useMutation({
     onSuccess: () => toast.success("Apartment removed from saved"),
   });
-  
+
   const handleSave = useCallback(() => {
+    if (isContextId) {
+      toast.info("Save is only available for verified DB listings");
+      return;
+    }
     if (!isAuthenticated) {
       toast.error("Please sign in to save apartments");
       return;
     }
-    
+
     const apartmentId = parseInt(params.id || "0");
     if (isSaved) {
       unsaveMutation.mutate({ apartmentId });
     } else {
       saveMutation.mutate({ apartmentId });
     }
-  }, [isAuthenticated, isSaved, params.id, saveMutation, unsaveMutation]);
+  }, [isContextId, isAuthenticated, isSaved, params.id, saveMutation, unsaveMutation]);
   
   const handleShare = useCallback(() => {
     navigator.clipboard.writeText(window.location.href);

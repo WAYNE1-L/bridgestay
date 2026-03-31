@@ -288,7 +288,7 @@ export default function Apartments() {
     const dbApartments = apartments || [];
     
     // Convert context listings to apartment format
-    const contextApartments = contextListings.map((listing, index) => ({
+    const contextApartments = contextListings.map((listing) => ({
       id: `ctx_${listing.id}`,
       title: language === "cn" ? listing.title.cn : listing.title.en,
       description: language === "cn" ? listing.description.cn : listing.description.en,
@@ -297,15 +297,25 @@ export default function Apartments() {
       city: language === "cn" ? listing.location.area.cn : listing.location.area.en,
       state: "UT",
       monthlyRent: listing.price.amount.toString(),
-      images: listing.imageUrl ? JSON.stringify([listing.imageUrl]) : "[]",
+      // Use images[] array first, fall back to legacy imageUrl for Supabase listings
+      images: JSON.stringify(
+        listing.images?.length
+          ? listing.images
+          : listing.imageUrl
+          ? [listing.imageUrl]
+          : []
+      ),
       amenities: JSON.stringify(listing.tags.map(t => language === "cn" ? t.cn : t.en)),
-      bedrooms: 0,
-      bathrooms: "1",
-      petsAllowed: false,
-      parkingIncluded: false,
+      bedrooms: listing.bedrooms ?? null,
+      bathrooms: listing.bathrooms != null ? String(listing.bathrooms) : null,
+      squareFeet: listing.squareFeet ?? null,
+      petsAllowed: listing.petsAllowed ?? false,
+      parkingIncluded: listing.parkingIncluded ?? false,
+      noSsnRequired: listing.noSsnRequired ?? true,
       featured: listing.isFeatured || false,
       isFromContext: true,
       contact: listing.contact,
+      sourceLink: listing.sourceLink,
     }));
     
     // Combine both sources
