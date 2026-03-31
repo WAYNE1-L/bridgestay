@@ -4,6 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { MapView } from "@/components/Map";
 import { trpc } from "@/lib/trpc";
+import { computeSignals } from "@/lib/signals";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { getLoginUrl } from "@/const";
 import { useListings } from "@/contexts/ListingsContext";
@@ -306,6 +307,26 @@ export default function ApartmentDetail() {
                   )}
                 </div>
                 
+                {/* Fit-for-you signal badges */}
+                {(() => {
+                  const signals = computeSignals(apartment as Record<string, unknown>);
+                  if (signals.length === 0) return null;
+                  return (
+                    <div className="flex flex-wrap gap-2 mb-4">
+                      {signals.map((s) => (
+                        <span
+                          key={s.id}
+                          title={s.description}
+                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-full ${s.colorClasses}`}
+                        >
+                          <span aria-hidden="true">{s.emoji}</span>
+                          <span>{s.label}</span>
+                        </span>
+                      ))}
+                    </div>
+                  );
+                })()}
+
                 <h1 className="text-3xl md:text-4xl font-bold mb-2">{apartment.title}</h1>
                 
                 <p className="text-lg text-muted-foreground flex items-center gap-2 mb-4">
@@ -449,23 +470,54 @@ export default function ApartmentDetail() {
                 <div className="mb-6 p-4 rounded-xl bg-muted/50">
                   <h3 className="font-semibold mb-3 flex items-center gap-2">
                     <Calendar className="w-4 h-4" />
-                    Lease Terms
+                    {apartment.isSublease ? "Sublease Terms" : "Lease Terms"}
                   </h3>
                   <div className="space-y-2 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Minimum Lease</span>
-                      <span>{apartment.minLeaseTerm} months</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Maximum Lease</span>
-                      <span>{apartment.maxLeaseTerm} months</span>
-                    </div>
+                    {apartment.isSublease && (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Type</span>
+                        <span className="text-orange-500 font-medium">📋 Sublease</span>
+                      </div>
+                    )}
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Available From</span>
                       <span>{new Date(apartment.availableFrom).toLocaleDateString()}</span>
                     </div>
+                    {apartment.subleaseEndDate ? (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Lease Ends</span>
+                        <span>{new Date(apartment.subleaseEndDate).toLocaleDateString()}</span>
+                      </div>
+                    ) : (
+                      <>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Minimum Lease</span>
+                          <span>{apartment.minLeaseTerm} months</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span className="text-muted-foreground">Maximum Lease</span>
+                          <span>{apartment.maxLeaseTerm} months</span>
+                        </div>
+                      </>
+                    )}
                   </div>
                 </div>
+
+                {/* WeChat contact (shown when present) */}
+                {apartment.wechatContact && (
+                  <div className="mb-6 p-4 rounded-xl bg-green-500/10 border border-green-500/20">
+                    <h3 className="font-semibold mb-2 flex items-center gap-2 text-green-600 dark:text-green-400">
+                      <span aria-hidden="true">💬</span>
+                      WeChat Contact
+                    </h3>
+                    <p className="text-sm font-mono bg-muted px-3 py-2 rounded-lg select-all">
+                      {apartment.wechatContact}
+                    </p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      Add on WeChat to message the landlord directly
+                    </p>
+                  </div>
+                )}
                 
                 {/* International Student Benefits */}
                 <div className="mb-6 p-4 rounded-xl bg-primary/10 border border-primary/20">

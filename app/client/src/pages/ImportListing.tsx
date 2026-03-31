@@ -60,6 +60,11 @@ type ExtractedListing = {
   petsAllowed?: boolean;
   parkingIncluded?: boolean;
   amenities?: string[];
+  utilitiesIncluded?: string[];
+  isSublease?: boolean;
+  subleaseEndDate?: string;
+  leaseTerm?: number;
+  furnished?: boolean;
   wechatContact?: string;
   confidence: "high" | "medium" | "low";
 };
@@ -88,7 +93,12 @@ type FormState = {
   availableFrom: string;
   petsAllowed: boolean;
   parkingIncluded: boolean;
-  amenitiesText: string; // comma-separated; split on save
+  amenitiesText: string;    // comma-separated; split on save
+  utilitiesText: string;    // comma-separated utilities included in rent
+  isSublease: boolean;
+  subleaseEndDate: string;  // ISO date string or ""
+  leaseTerm: string;        // months as string, or ""
+  wechatContact: string;
 };
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -117,6 +127,11 @@ function makeDefaultForm(): FormState {
     petsAllowed: false,
     parkingIncluded: false,
     amenitiesText: "",
+    utilitiesText: "",
+    isSublease: false,
+    subleaseEndDate: "",
+    leaseTerm: "",
+    wechatContact: "",
   };
 }
 
@@ -125,6 +140,13 @@ function applyExtracted(form: FormState, e: ExtractedListing): FormState {
     ["apartment", "studio", "house", "room", "condo", "townhouse"].includes(
       v ?? ""
     );
+
+  // Merge "Furnished" into amenities when the LLM detected furnished=true
+  const baseAmenities = e.amenities ?? [];
+  const amenityList =
+    e.furnished === true && !baseAmenities.includes("Furnished")
+      ? ["Furnished", ...baseAmenities]
+      : baseAmenities;
 
   return {
     ...form,
@@ -145,7 +167,12 @@ function applyExtracted(form: FormState, e: ExtractedListing): FormState {
     availableFrom: e.availableFrom?.split("T")[0] ?? form.availableFrom,
     petsAllowed: e.petsAllowed ?? form.petsAllowed,
     parkingIncluded: e.parkingIncluded ?? form.parkingIncluded,
-    amenitiesText: e.amenities?.join(", ") ?? form.amenitiesText,
+    amenitiesText: amenityList.length > 0 ? amenityList.join(", ") : form.amenitiesText,
+    utilitiesText: e.utilitiesIncluded?.join(", ") ?? form.utilitiesText,
+    isSublease: e.isSublease ?? form.isSublease,
+    subleaseEndDate: e.subleaseEndDate?.split("T")[0] ?? form.subleaseEndDate,
+    leaseTerm: e.leaseTerm?.toString() ?? form.leaseTerm,
+    wechatContact: e.wechatContact ?? form.wechatContact,
   };
 }
 
@@ -397,6 +424,11 @@ export default function ImportListing() {
       .map((s) => s.trim())
       .filter(Boolean);
 
+    const utilities = form.utilitiesText
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean);
+
     createMutation.mutate({
       title: form.title,
       description: form.description || undefined,
@@ -414,7 +446,16 @@ export default function ImportListing() {
       petsAllowed: form.petsAllowed,
       parkingIncluded: form.parkingIncluded,
       amenities: amenities.length > 0 ? amenities : undefined,
+      utilitiesIncluded: utilities.length > 0 ? utilities : undefined,
       images: images.length > 0 ? images : undefined,
+      // Sublease fields — subleaseEndDate and leaseTerm only apply to subleases
+      isSublease: form.isSublease || undefined,
+      subleaseEndDate: form.isSublease && form.subleaseEndDate ? form.subleaseEndDate : undefined,
+      wechatContact: form.wechatContact || undefined,
+      // For subleases: use the extracted term as both min and max (fixed period).
+      // For direct leases: omit and let the DB defaults (6/12 months) apply.
+      minLeaseTerm: form.isSublease && form.leaseTerm ? Number(form.leaseTerm) : undefined,
+      maxLeaseTerm: form.isSublease && form.leaseTerm ? Number(form.leaseTerm) : undefined,
       // Geocoding results — undefined when geocoding failed or was skipped;
       // apartments.create already accepts these as optional
       latitude: geocodedData?.latitude,
@@ -916,8 +957,92 @@ export default function ImportListing() {
                   <Input
                     value={form.amenitiesText}
                     onChange={(e) => update("amenitiesText", e.target.value)}
-                    placeholder="WiFi, Laundry, Gym, Pool, Dishwasher…"
+                    placeholder="In-unit Laundry, Gym, Pool, Dishwasher…"
                   />
+                </div>
+
+                <div className="space-y-1.5">
+                  <Label>
+                    Utilities Included{" "}
+                    <span className="text-muted-foreground text-xs">
+                      (comma-separated)
+                    </span>
+                  </Label>
+                  <Input
+                    value={form.utilitiesText}
+                    onChange={(e) => update("utilitiesText", e.target.value)}
+                    placeholder="Water, Electric, Gas, Internet, Trash…"
+                  />
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Sublease & Contact */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <MessageSquare className="w-4 h-4" /> Sublease & Contact
+                </CardTitle>
+                <CardDescription>
+                  Common for WeChat listings — fill in as many as apply
+                </CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="flex items-center justify-between py-1">
+                  <div>
+                    <Label className="cursor-pointer">This is a sublease (转租)</Label>
+                    <p className="text-xs text-muted-foreground mt-0.5">
+                      The current tenant is subletting the unit
+                    </p>
+                  </div>
+                  <Switch
+                    checked={form.isSublease}
+                    onCheckedChange={(v) => update("isSublease", v)}
+                  />
+                </div>
+
+                {form.isSublease && (
+                  <>
+                    <Separator />
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1.5">
+                        <Label>Sublease Ends On</Label>
+                        <Input
+                          type="date"
+                          value={form.subleaseEndDate}
+                          onChange={(e) => update("subleaseEndDate", e.target.value)}
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <Label>
+                          Lease Term{" "}
+                          <span className="text-muted-foreground text-xs">(months)</span>
+                        </Label>
+                        <Input
+                          type="number"
+                          value={form.leaseTerm}
+                          onChange={(e) => update("leaseTerm", e.target.value)}
+                          placeholder="e.g. 6"
+                          min={1}
+                          max={24}
+                        />
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                <Separator />
+
+                <div className="space-y-1.5">
+                  <Label>WeChat Contact ID</Label>
+                  <Input
+                    value={form.wechatContact}
+                    onChange={(e) => update("wechatContact", e.target.value)}
+                    placeholder="e.g. landlord_wx123"
+                  />
+                  <p className="text-xs text-muted-foreground">
+                    The WeChat ID students can use to contact you
+                  </p>
                 </div>
               </CardContent>
             </Card>

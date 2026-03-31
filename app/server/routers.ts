@@ -54,6 +54,10 @@ const createApartmentSchema = z.object({
   parkingFee: z.number().optional(),
   images: z.array(z.string()).optional(),
   virtualTourUrl: z.string().optional(),
+  // Sublease-specific (Phase 3)
+  isSublease: z.boolean().optional(),
+  subleaseEndDate: z.string().optional().transform(s => s ? new Date(s) : undefined),
+  wechatContact: z.string().max(100).optional(),
 });
 
 const studentProfileSchema = z.object({

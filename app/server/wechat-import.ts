@@ -15,10 +15,15 @@ export type ExtractedListing = {
   squareFeet?: number;
   monthlyRent?: number;
   securityDeposit?: number;
-  availableFrom?: string; // ISO-8601 date string
+  availableFrom?: string;        // ISO-8601 date string
   petsAllowed?: boolean;
   parkingIncluded?: boolean;
   amenities?: string[];
+  utilitiesIncluded?: string[];  // e.g. ["Water", "Electric", "Internet"]
+  isSublease?: boolean;          // true when listing is a sublease
+  subleaseEndDate?: string;      // ISO-8601 end date for the sublease term
+  leaseTerm?: number;            // duration in months (for minLeaseTerm/maxLeaseTerm)
+  furnished?: boolean;           //带家具 → auto-adds "Furnished" to amenities
   wechatContact?: string;
   confidence: "high" | "medium" | "low";
 };
@@ -69,11 +74,32 @@ const LISTING_OUTPUT_SCHEMA = {
       amenities: {
         type: "array",
         items: { type: "string" },
-        description: "List of amenities in English",
+        description: "List of amenities in English (exclude utilities and furnished — those go in separate fields)",
+      },
+      utilitiesIncluded: {
+        type: "array",
+        items: { type: "string" },
+        description: "Utilities included in rent, e.g. ['Water', 'Electric', 'Gas', 'Internet', 'Trash']. Only include utilities explicitly mentioned as included.",
+      },
+      isSublease: {
+        type: "boolean",
+        description: "true if this is a sublease (转租/转让/sublease), false if it's a direct lease from a landlord/property manager",
+      },
+      subleaseEndDate: {
+        type: "string",
+        description: "End date of the sublease as ISO-8601 (YYYY-MM-DD). Only set if isSublease is true and an end date is mentioned.",
+      },
+      leaseTerm: {
+        type: "number",
+        description: "Lease duration in months. For subleases, compute from availableFrom to subleaseEndDate. For regular leases, extract from text.",
+      },
+      furnished: {
+        type: "boolean",
+        description: "true if the unit is furnished (带家具/furnished/家具齐全). If furniture is not mentioned, omit this field.",
       },
       wechatContact: {
         type: "string",
-        description: "Landlord WeChat ID if mentioned",
+        description: "Landlord or sublessor WeChat ID if mentioned",
       },
       confidence: {
         type: "string",
@@ -101,8 +127,24 @@ Key Chinese rental terms to recognize:
 • 允许宠物 / 可养宠物 / 宠物友好 → pets allowed
 • 停车位 / 停车 / 含车位 → parking included
 • 可入住 / 入住日期 / 最早入住 → available from date
-• 微信 / WX / WeChat → WeChat contact
-• 公寓 → apartment, 工作室 → studio, 独栋 → house, 单间 → room
+• 微信 / WX / WeChat → WeChat contact ID
+• 公寓 → apartment, 工作室 / 开间 → studio, 独栋 / 独立屋 → house, 单间 / 独立房间 → room
+
+Sublease terms (very common in WeChat):
+• 转租 / 转让 / sublease / sublet → isSublease = true
+• 合同到期 / 租约到 / 到期日 / lease ends / until [month year] → subleaseEndDate
+• 剩余X个月 / X months remaining → leaseTerm = X
+
+Utilities (水电网/水费/电费/网费 etc.):
+• 含水电 / 水电全包 / utilities included → list which ones in utilitiesIncluded
+• 含网 / WiFi included / 网费 → "Internet" in utilitiesIncluded
+• 含水 / water included → "Water" in utilitiesIncluded
+• 含电 / electric included → "Electric" in utilitiesIncluded
+• 含气 / gas included → "Gas" in utilitiesIncluded
+
+Furniture:
+• 带家具 / 家具齐全 / fully furnished / furnished → furnished = true
+• 不带家具 / 空房 / unfurnished → furnished = false
 
 For prices shown as $1,800 or ¥1800 or 1800美金, extract the numeric USD value only.
 For dates, output ISO-8601 format (YYYY-MM-DD). If only a month/year is given, use the 1st of that month.
@@ -131,7 +173,16 @@ function mockExtraction(): ExtractedListing {
     availableFrom: next30.toISOString().split("T")[0],
     petsAllowed: false,
     parkingIncluded: true,
-    amenities: ["WiFi", "In-unit Laundry", "Air Conditioning"],
+    amenities: ["In-unit Laundry", "Air Conditioning"],
+    utilitiesIncluded: ["Water", "Internet"],
+    isSublease: true,
+    subleaseEndDate: (() => {
+      const d = new Date();
+      d.setMonth(d.getMonth() + 6);
+      return d.toISOString().split("T")[0];
+    })(),
+    leaseTerm: 6,
+    furnished: true,
     wechatContact: "mock_landlord_wx",
     confidence: "low",
   };

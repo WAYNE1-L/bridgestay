@@ -34,6 +34,7 @@ import {
   Shield,
   GraduationCap,
 } from "lucide-react";
+import { topSignals } from "@/lib/signals";
 import { useState, useRef, useMemo, useCallback, useEffect } from "react";
 import { Link, useSearch } from "wouter";
 import { useAuth } from "@/_core/hooks/useAuth";
@@ -163,8 +164,8 @@ function ApartmentCard({ apartment, onSave, isSaved, isAdminMode = false, onDele
             )}
           </div>
           
-          {/* Tags */}
-          <div className="flex flex-wrap gap-2">
+          {/* Tags: persistent property facts */}
+          <div className="flex flex-wrap gap-1.5 mb-2">
             {apartment.petsAllowed && (
               <span className="px-2 py-1 text-xs bg-accent rounded-full flex items-center gap-1">
                 <PawPrint className="w-3 h-3" />
@@ -177,12 +178,27 @@ function ApartmentCard({ apartment, onSave, isSaved, isAdminMode = false, onDele
                 Parking
               </span>
             )}
-            {amenities.slice(0, 2).map((amenity: string) => (
-              <span key={amenity} className="px-2 py-1 text-xs bg-accent rounded-full">
-                {amenity}
-              </span>
-            ))}
           </div>
+
+          {/* Signal badges: rule-based fit signals */}
+          {(() => {
+            const signals = topSignals(apartment, 3);
+            if (signals.length === 0) return null;
+            return (
+              <div className="flex flex-wrap gap-1.5">
+                {signals.map((s) => (
+                  <span
+                    key={s.id}
+                    title={s.description}
+                    className={`px-2 py-1 text-xs font-medium rounded-full flex items-center gap-1 ${s.colorClasses}`}
+                  >
+                    <span aria-hidden="true">{s.emoji}</span>
+                    {s.label}
+                  </span>
+                ))}
+              </div>
+            );
+          })()}
 
           {/* Admin Mode Buttons - Only visible with ?admin=true */}
           {isAdminMode && (

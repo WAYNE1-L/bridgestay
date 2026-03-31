@@ -142,7 +142,12 @@ export const apartments = mysqlTable("apartments", {
   acceptsInternationalStudents: boolean("acceptsInternationalStudents").default(true).notNull(),
   noSsnRequired: boolean("noSsnRequired").default(true).notNull(),
   noCreditCheckRequired: boolean("noCreditCheckRequired").default(true).notNull(),
-  
+
+  // Sublease-specific fields (Phase 3)
+  isSublease: boolean("isSublease"),          // null = unknown, true = sublease, false = direct lease
+  subleaseEndDate: timestamp("subleaseEndDate"), // fixed end date for subleases
+  wechatContact: varchar("wechatContact", { length: 100 }), // landlord WeChat ID from listing
+
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
