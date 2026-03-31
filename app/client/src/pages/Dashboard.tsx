@@ -26,6 +26,7 @@ import {
   Home,
   BarChart3,
   MessageSquare,
+  Wand2,
 } from "lucide-react";
 import { Link, useLocation } from "wouter";
 import { useEffect } from "react";
@@ -296,9 +297,25 @@ function LandlordDashboard() {
   const { data: stats, isLoading: statsLoading } = trpc.stats.landlord.useQuery();
   const { data: listings, isLoading: listingsLoading } = trpc.apartments.myListings.useQuery();
   const { data: applications, isLoading: appsLoading } = trpc.applications.landlordApplications.useQuery({});
-  
+
   return (
     <div className="space-y-8">
+      {/* Quick actions */}
+      <div className="flex flex-wrap gap-3">
+        <Link href="/import-listing">
+          <Button className="gap-2 bg-green-600 hover:bg-green-700 text-white">
+            <MessageSquare className="w-4 h-4" />
+            Import from WeChat
+          </Button>
+        </Link>
+        <Link href="/apartments">
+          <Button variant="outline" className="gap-2">
+            <Eye className="w-4 h-4" />
+            View All Listings
+          </Button>
+        </Link>
+      </div>
+
       {/* Stats */}
       <div className="grid md:grid-cols-4 gap-6">
         <motion.div {...fadeInUp}>

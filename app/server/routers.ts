@@ -744,6 +744,82 @@ export const appRouter = router({
     }),
   }),
 
+  // ============ WECHAT LISTING IMPORT ============
+  listings: router({
+    /**
+     * Extract structured listing data from WeChat text or a screenshot.
+     * Uses Gemini 2.5 Flash via the Forge API; returns a mock when the key
+     * is not configured (safe for local dev).
+     */
+    extractFromWeChat: publicProcedure
+      .input(
+        z.object({
+          text: z.string().optional(),
+          imageBase64: z.string().optional(),
+          mimeType: z.string().optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        if (!input.text && !input.imageBase64) {
+          throw new TRPCError({
+            code: "BAD_REQUEST",
+            message: "Provide text or an image to extract from",
+          });
+        }
+        const { extractListingFromWeChat } = await import("./wechat-import");
+        return await extractListingFromWeChat(input);
+      }),
+
+    /**
+     * Geocode a US address using Nominatim (free, no key required) and
+     * find nearby universities from the BridgeStay DB using the Haversine
+     * formula. Returns found:false when the address cannot be resolved so
+     * the caller can still save without crashing.
+     */
+    geocodeAddress: publicProcedure
+      .input(
+        z.object({
+          address: z.string().min(1),
+          city: z.string().min(1),
+          state: z.string().min(2).max(2),
+          zipCode: z.string().optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const { geocodeAddress, findNearbyUniversities } = await import(
+          "./geocoding"
+        );
+
+        const geo = await geocodeAddress(input);
+
+        if (!geo) {
+          return {
+            found: false as const,
+            latitude: null,
+            longitude: null,
+            displayName: null,
+            nearbyUniversities: [] as string[],
+          };
+        }
+
+        // Look up universities in the same state and filter by radius
+        const stateUniversities = await db.getUniversities(input.state);
+        const nearby = findNearbyUniversities(
+          geo.latitude,
+          geo.longitude,
+          stateUniversities ?? []
+        );
+
+        return {
+          found: true as const,
+          latitude: geo.latitude,
+          longitude: geo.longitude,
+          displayName: geo.displayName,
+          nearbyUniversities: nearby,
+        };
+      }),
+  }),
+
   // ============ PROMOTIONS ============
   promotions: router({
     create: protectedProcedure

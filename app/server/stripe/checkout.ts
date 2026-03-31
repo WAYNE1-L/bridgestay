@@ -5,12 +5,29 @@ import { users, payments } from "../../drizzle/schema";
 import { eq } from "drizzle-orm";
 import { PAYMENT_TYPES, PaymentType, calculateMoveInCost } from "./products";
 
-// Initialize Stripe
-const stripe = new Stripe(ENV.stripeSecretKey!, {
-  apiVersion: "2025-12-15.clover",
-});
+// Lazy-initialize Stripe so the app can start without a key in development
+let _stripe: Stripe | null = null;
 
-export { stripe };
+function getStripe(): Stripe {
+  if (!_stripe) {
+    if (!ENV.stripeSecretKey) {
+      throw new Error(
+        "[Stripe] STRIPE_SECRET_KEY is not configured. Payment features are unavailable."
+      );
+    }
+    _stripe = new Stripe(ENV.stripeSecretKey, {
+      apiVersion: "2025-12-15.clover",
+    });
+  }
+  return _stripe;
+}
+
+/** @deprecated – use getStripe() instead; kept for any existing imports */
+export const stripe = new Proxy({} as Stripe, {
+  get(_target, prop, receiver) {
+    return Reflect.get(getStripe(), prop, receiver);
+  },
+});
 
 /**
  * Get or create a Stripe customer for a user

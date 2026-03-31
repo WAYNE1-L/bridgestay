@@ -5,29 +5,48 @@ import { getDb } from "../db";
 import { payments, applications } from "../../drizzle/schema";
 import { eq } from "drizzle-orm";
 
-const stripe = new Stripe(ENV.stripeSecretKey!, {
-  apiVersion: "2025-12-15.clover",
-});
+// Lazy-initialize Stripe so the server can start without a key in development
+let _stripe: Stripe | null = null;
+
+function getStripe(): Stripe {
+  if (!_stripe) {
+    if (!ENV.stripeSecretKey) {
+      throw new Error(
+        "[Stripe] STRIPE_SECRET_KEY is not configured. Webhook handling is unavailable."
+      );
+    }
+    _stripe = new Stripe(ENV.stripeSecretKey, {
+      apiVersion: "2025-12-15.clover",
+    });
+  }
+  return _stripe;
+}
 
 /**
  * Stripe Webhook Handler
  * Handles payment events from Stripe
  */
 export async function handleStripeWebhook(req: Request, res: Response) {
+  // Fail gracefully when Stripe is not configured (local dev without keys)
+  if (!ENV.stripeSecretKey || !ENV.stripeWebhookSecret) {
+    console.warn("[Webhook] Stripe is not configured – ignoring webhook request");
+    return res.status(503).json({ error: "Stripe is not configured" });
+  }
+
   const sig = req.headers["stripe-signature"] as string;
-  
+
   if (!sig) {
     console.error("[Webhook] No signature found");
     return res.status(400).json({ error: "No signature" });
   }
-  
+
   let event: Stripe.Event;
-  
+
   try {
-    event = stripe.webhooks.constructEvent(
+    event = getStripe().webhooks.constructEvent(
       req.body,
       sig,
-      ENV.stripeWebhookSecret!
+      ENV.stripeWebhookSecret
     );
   } catch (err: any) {
     console.error("[Webhook] Signature verification failed:", err.message);

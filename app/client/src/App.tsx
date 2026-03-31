@@ -17,6 +17,7 @@ import Admin from "./pages/Admin";
 import AIGenerator from "./pages/AIGenerator";
 import AdminReview from "./pages/AdminReview";
 import Investors from "./pages/Investors";
+import ImportListing from "./pages/ImportListing";
 import { AIConsultant } from "./components/AIConsultant";
 
 function Router() {
@@ -33,6 +34,7 @@ function Router() {
       <Route path={"/admin/generator"} component={AIGenerator} />
       <Route path={"/admin/review"} component={AdminReview} />
       <Route path={"/investors"} component={Investors} />
+      <Route path={"/import-listing"} component={ImportListing} />
       <Route path={"/404"} component={NotFound} />
       <Route component={NotFound} />
     </Switch>

@@ -83,12 +83,34 @@ const createOAuthHttpClient = (): AxiosInstance =>
   });
 
 class SDKServer {
-  private readonly client: AxiosInstance;
-  private readonly oauthService: OAuthService;
+  private _client: AxiosInstance | null = null;
+  private _oauthService: OAuthService | null = null;
 
-  constructor(client: AxiosInstance = createOAuthHttpClient()) {
-    this.client = client;
-    this.oauthService = new OAuthService(this.client);
+  /** Lazy-init so the server can start without OAUTH_SERVER_URL in local dev */
+  private get client(): AxiosInstance {
+    if (!this._client) {
+      if (!ENV.oAuthServerUrl) {
+        throw new Error(
+          "[OAuth] OAUTH_SERVER_URL is not configured. Auth features are unavailable."
+        );
+      }
+      this._client = createOAuthHttpClient();
+    }
+    return this._client;
+  }
+
+  private get oauthService(): OAuthService {
+    if (!this._oauthService) {
+      this._oauthService = new OAuthService(this.client);
+    }
+    return this._oauthService;
+  }
+
+  constructor() {
+    // Startup diagnostics only – no crash
+    if (!ENV.oAuthServerUrl) {
+      console.warn("[OAuth] OAUTH_SERVER_URL is not set – auth features will be unavailable until configured.");
+    }
   }
 
   private deriveLoginMethod(
@@ -156,6 +178,9 @@ class SDKServer {
 
   private getSessionSecret() {
     const secret = ENV.cookieSecret;
+    if (!secret) {
+      throw new Error("[Auth] JWT_SECRET is not configured. Session handling is unavailable.");
+    }
     return new TextEncoder().encode(secret);
   }
 

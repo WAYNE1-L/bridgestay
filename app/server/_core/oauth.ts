@@ -11,6 +11,22 @@ function getQueryParam(req: Request, key: string): string | undefined {
 
 export function registerOAuthRoutes(app: Express) {
   app.get("/api/oauth/callback", async (req: Request, res: Response) => {
+    // Fail gracefully when OAuth is not configured (local dev without keys)
+    const { ENV } = await import("./env");
+    if (!ENV.oAuthServerUrl || !ENV.appId || !ENV.cookieSecret) {
+      const missing = [
+        !ENV.oAuthServerUrl && "OAUTH_SERVER_URL",
+        !ENV.appId && "VITE_APP_ID",
+        !ENV.cookieSecret && "JWT_SECRET",
+      ].filter(Boolean);
+      console.warn(`[OAuth] Cannot process callback – missing env vars: ${missing.join(", ")}`);
+      res.status(503).json({
+        error: "OAuth is not configured for this environment",
+        missing,
+      });
+      return;
+    }
+
     const code = getQueryParam(req, "code");
     const state = getQueryParam(req, "state");
 
