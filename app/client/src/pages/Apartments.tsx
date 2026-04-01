@@ -288,11 +288,15 @@ export default function Apartments() {
   });
   
   const saveMutation = trpc.apartments.save.useMutation({
-    onSuccess: () => toast.success("Apartment saved!"),
+    onSuccess: () =>
+      toast.success("Saved!", {
+        description: "View all your saved listings in the dashboard.",
+        action: { label: "View saved →", onClick: () => (window.location.href = "/dashboard") },
+      }),
   });
-  
+
   const unsaveMutation = trpc.apartments.unsave.useMutation({
-    onSuccess: () => toast.success("Apartment removed from saved"),
+    onSuccess: () => toast.success("Removed from saved listings"),
   });
   
   const savedIds = useMemo(() => {
@@ -373,11 +377,12 @@ export default function Apartments() {
   const applyFilters = useCallback(() => {
     setAppliedFilters({
       city: searchCity,
-      state: selectedState,
+      // "any" is the SelectItem placeholder value — treat it as no filter
+      state: selectedState === "any" ? "" : selectedState,
       minPrice: priceRange[0],
       maxPrice: priceRange[1],
-      bedrooms: bedrooms ? parseInt(bedrooms) : undefined,
-      propertyType,
+      bedrooms: bedrooms && bedrooms !== "any" ? parseInt(bedrooms) : undefined,
+      propertyType: propertyType === "any" ? "" : propertyType,
       petsAllowed,
       parkingIncluded,
     });
@@ -462,7 +467,18 @@ export default function Apartments() {
       updateMapMarkers(mapRef.current);
     }
   }, [apartments, viewMode, updateMapMarkers]);
-  
+
+  // True when any filter is active — used to pick the right empty-state message
+  const hasActiveFilters =
+    appliedFilters.city !== "" ||
+    appliedFilters.state !== "" ||
+    appliedFilters.bedrooms !== undefined ||
+    appliedFilters.propertyType !== "" ||
+    appliedFilters.petsAllowed ||
+    appliedFilters.parkingIncluded ||
+    appliedFilters.minPrice > 0 ||
+    appliedFilters.maxPrice < 5000;
+
   return (
     <div className="min-h-screen bg-background">
       <Navbar />
@@ -748,17 +764,37 @@ export default function Apartments() {
           {!isLoading && mergedApartments.length === 0 && (
             <div className="text-center py-20">
               <Building2 className="w-16 h-16 text-muted-foreground mx-auto mb-4" />
-              <h3 className="text-xl font-semibold mb-2">
-                {language === "cn" ? "暂无房源" : "No apartments found"}
-              </h3>
-              <p className="text-muted-foreground mb-6">
-                {language === "cn" 
-                  ? "尝试调整筛选条件或搜索其他区域"
-                  : "Try adjusting your filters or search in a different area."}
-              </p>
-              <Button onClick={clearFilters} variant="outline" className="bg-transparent">
-                {language === "cn" ? "清除筛选" : "Clear Filters"}
-              </Button>
+              {hasActiveFilters ? (
+                <>
+                  <h3 className="text-xl font-semibold mb-2">
+                    {language === "cn" ? "暂无匹配房源" : "No listings match your filters"}
+                  </h3>
+                  <p className="text-muted-foreground mb-6">
+                    {language === "cn"
+                      ? "尝试调整筛选条件或搜索其他区域"
+                      : "Try widening your search — adjust the price range, city, or remove a filter."}
+                  </p>
+                  <Button onClick={clearFilters} variant="outline" className="bg-transparent">
+                    {language === "cn" ? "清除筛选" : "Clear Filters"}
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <h3 className="text-xl font-semibold mb-2">
+                    {language === "cn" ? "暂无房源" : "No listings yet"}
+                  </h3>
+                  <p className="text-muted-foreground mb-6">
+                    {language === "cn"
+                      ? "成为第一个从微信导入房源的房东"
+                      : "Be the first to import a listing from WeChat — it takes under 2 minutes."}
+                  </p>
+                  <Button asChild>
+                    <Link href="/import-listing">
+                      {language === "cn" ? "导入微信房源" : "Import a Listing"}
+                    </Link>
+                  </Button>
+                </>
+              )}
             </div>
           )}
         </div>

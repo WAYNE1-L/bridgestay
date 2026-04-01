@@ -285,6 +285,11 @@ export default function ImportListing() {
 
   const createMutation = trpc.apartments.create.useMutation({
     onSuccess(data) {
+      // Guard: id must be a positive integer before navigating to the detail page.
+      if (typeof data.id !== "number" || data.id <= 0) {
+        toast.error("Listing saved but could not determine its ID. Check your dashboard.");
+        return;
+      }
       setSavedId(data.id);
       setStep("success");
     },
@@ -1098,7 +1103,7 @@ export default function ImportListing() {
         )}
 
         {/* ── STEP 3: SUCCESS ──────────────────────────────────────────── */}
-        {step === "success" && savedId !== null && (
+        {step === "success" && typeof savedId === "number" && savedId > 0 && (
           <Card className="text-center py-12">
             <CardContent className="space-y-6">
               <div className="w-20 h-20 rounded-full bg-green-500/20 flex items-center justify-center mx-auto">

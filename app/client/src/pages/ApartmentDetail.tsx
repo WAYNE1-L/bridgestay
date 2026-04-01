@@ -30,6 +30,9 @@ import {
   Globe,
   FileText,
   ArrowLeft,
+  Copy,
+  Check,
+  MessageCircle,
 } from "lucide-react";
 import { useState, useCallback, useRef } from "react";
 import { useParams, Link, useLocation } from "wouter";
@@ -48,6 +51,14 @@ export default function ApartmentDetail() {
   const mapRef = useRef<google.maps.Map | null>(null);
 
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const [copied, setCopied] = useState(false);
+
+  const handleCopyWeChat = useCallback((id: string) => {
+    navigator.clipboard.writeText(id);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+    toast.success("WeChat ID copied! Open WeChat → Add Contacts → paste to find the landlord.");
+  }, []);
 
   // Detect context listings (IDs prefixed with "ctx_" come from ListingsContext,
   // not the DB — e.g. ctx_slc_001. These must be resolved locally, not via tRPC.)
@@ -107,26 +118,32 @@ export default function ApartmentDetail() {
       }
     : null;
 
-  // tRPC DB query — disabled for context IDs to avoid the parseInt("ctx_…") = NaN bug
+  // tRPC DB query — guard against NaN/0/negative IDs (e.g. "undefined", missing param)
+  const numericId = params.id ? parseInt(params.id, 10) : 0;
+  const validNumericId = !isNaN(numericId) && numericId > 0;
   const { data: dbApartment, isLoading: dbLoading } = trpc.apartments.getById.useQuery(
-    { id: isContextId ? 0 : parseInt(params.id || "0") },
-    { enabled: !isContextId && !!params.id }
+    { id: isContextId ? 0 : numericId },
+    { enabled: !isContextId && validNumericId }
   );
 
   const apartment = isContextId ? mappedContextApartment : dbApartment;
   const isLoading = isContextId ? false : dbLoading;
 
   const { data: isSaved } = trpc.apartments.isSaved.useQuery(
-    { apartmentId: isContextId ? 0 : parseInt(params.id || "0") },
-    { enabled: !isContextId && !!params.id && isAuthenticated }
+    { apartmentId: isContextId ? 0 : numericId },
+    { enabled: !isContextId && validNumericId && isAuthenticated }
   );
 
   const saveMutation = trpc.apartments.save.useMutation({
-    onSuccess: () => toast.success("Apartment saved!"),
+    onSuccess: () =>
+      toast.success("Saved!", {
+        description: "Find all your saved listings in the dashboard.",
+        action: { label: "View saved →", onClick: () => navigate("/dashboard") },
+      }),
   });
 
   const unsaveMutation = trpc.apartments.unsave.useMutation({
-    onSuccess: () => toast.success("Apartment removed from saved"),
+    onSuccess: () => toast.success("Removed from saved listings"),
   });
 
   const handleSave = useCallback(() => {
@@ -227,6 +244,19 @@ export default function ApartmentDetail() {
             </Button>
           </Link>
         </div>
+
+        {/* Draft preview banner — only visible before publishing */}
+        {(apartment as any).status === "draft" && (
+          <div className="container px-6 mb-2">
+            <div className="flex items-center gap-3 px-4 py-3 rounded-xl bg-yellow-500/10 border border-yellow-500/30 text-yellow-700 dark:text-yellow-400">
+              <span className="text-base" aria-hidden="true">👁</span>
+              <div className="text-sm">
+                <span className="font-semibold">Draft preview</span>
+                {" — "}this listing is only visible to you. Publish it from your dashboard to make it searchable by students.
+              </div>
+            </div>
+          </div>
+        )}
         
         {/* Image Gallery */}
         <div className="container px-6 mb-8">
@@ -475,6 +505,55 @@ export default function ApartmentDetail() {
                   </div>
                 </div>
                 
+                {/* ── Contact Landlord (primary student CTA) ─────────────── */}
+                {apartment.wechatContact ? (
+                  <div className="mb-6 p-4 rounded-xl bg-green-500/10 border border-green-500/20">
+                    <h3 className="font-semibold mb-1 flex items-center gap-2 text-green-700 dark:text-green-400">
+                      <span aria-hidden="true">💬</span>
+                      Contact Landlord on WeChat
+                    </h3>
+                    <p className="text-xs text-muted-foreground mb-2">
+                      This landlord prefers WeChat. Copy the ID below.
+                    </p>
+                    <p className="text-sm font-mono bg-background px-3 py-2 rounded-lg select-all border border-border mb-3">
+                      {apartment.wechatContact}
+                    </p>
+                    <div className="flex gap-2">
+                      <Button
+                        size="sm"
+                        className="flex-1 gap-1.5"
+                        onClick={() => handleCopyWeChat(apartment.wechatContact!)}
+                      >
+                        {copied
+                          ? <><Check className="w-3.5 h-3.5" />Copied!</>
+                          : <><Copy className="w-3.5 h-3.5" />Copy WeChat ID</>}
+                      </Button>
+                      <Button size="sm" variant="outline" className="bg-transparent" asChild>
+                        <a
+                          href={`weixin://dl/chat?${apartment.wechatContact}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          Open WeChat
+                        </a>
+                      </Button>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-2">
+                      In WeChat: tap <strong>+</strong> → <strong>Add Contacts</strong> → paste ID
+                    </p>
+                  </div>
+                ) : (
+                  <div className="mb-6 p-4 rounded-xl bg-muted/50 border border-border">
+                    <h3 className="font-semibold mb-1 flex items-center gap-2 text-muted-foreground">
+                      <MessageCircle className="w-4 h-4" />
+                      Contact Landlord
+                    </h3>
+                    <p className="text-sm text-muted-foreground">
+                      Contact details not provided. Submit an application and the landlord will reach out directly.
+                    </p>
+                  </div>
+                )}
+
                 {/* Lease Terms */}
                 <div className="mb-6 p-4 rounded-xl bg-muted/50">
                   <h3 className="font-semibold mb-3 flex items-center gap-2">
@@ -511,22 +590,6 @@ export default function ApartmentDetail() {
                     )}
                   </div>
                 </div>
-
-                {/* WeChat contact (shown when present) */}
-                {apartment.wechatContact && (
-                  <div className="mb-6 p-4 rounded-xl bg-green-500/10 border border-green-500/20">
-                    <h3 className="font-semibold mb-2 flex items-center gap-2 text-green-600 dark:text-green-400">
-                      <span aria-hidden="true">💬</span>
-                      WeChat Contact
-                    </h3>
-                    <p className="text-sm font-mono bg-muted px-3 py-2 rounded-lg select-all">
-                      {apartment.wechatContact}
-                    </p>
-                    <p className="text-xs text-muted-foreground mt-1">
-                      Add on WeChat to message the landlord directly
-                    </p>
-                  </div>
-                )}
                 
                 {/* International Student Benefits */}
                 <div className="mb-6 p-4 rounded-xl bg-primary/10 border border-primary/20">

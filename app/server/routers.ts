@@ -191,7 +191,16 @@ export const appRouter = router({
           petDeposit: input.petDeposit?.toString(),
           parkingFee: input.parkingFee?.toString(),
         } as any);
-        
+
+        // Guard: if db is unavailable, createApartment returns undefined silently.
+        // Throw so onError fires on the client instead of returning a broken id.
+        if (!id) {
+          throw new TRPCError({
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Listing could not be saved — database may be unavailable.",
+          });
+        }
+
         return { id, success: true };
       }),
 
