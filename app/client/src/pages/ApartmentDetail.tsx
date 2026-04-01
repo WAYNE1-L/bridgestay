@@ -307,22 +307,31 @@ export default function ApartmentDetail() {
                   )}
                 </div>
                 
-                {/* Fit-for-you signal badges */}
+                {/* Fit-for-you signals panel */}
                 {(() => {
                   const signals = computeSignals(apartment as Record<string, unknown>);
                   if (signals.length === 0) return null;
                   return (
-                    <div className="flex flex-wrap gap-2 mb-4">
-                      {signals.map((s) => (
-                        <span
-                          key={s.id}
-                          title={s.description}
-                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-sm font-medium rounded-full ${s.colorClasses}`}
-                        >
-                          <span aria-hidden="true">{s.emoji}</span>
-                          <span>{s.label}</span>
-                        </span>
-                      ))}
+                    <div className="mb-5 p-4 rounded-xl border border-border bg-card">
+                      <p className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-3">
+                        Why this listing stands out
+                      </p>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {signals.map((s) => (
+                          <div
+                            key={s.id}
+                            className={`flex items-start gap-2.5 px-3 py-2.5 rounded-lg ${s.colorClasses}`}
+                          >
+                            <span className="text-base leading-none mt-0.5" aria-hidden="true">
+                              {s.emoji}
+                            </span>
+                            <div className="min-w-0">
+                              <p className="font-semibold text-sm leading-tight">{s.label}</p>
+                              <p className="text-xs opacity-80 mt-0.5 leading-snug">{s.description}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
                   );
                 })()}

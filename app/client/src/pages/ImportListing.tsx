@@ -1089,7 +1089,7 @@ export default function ImportListing() {
                   </>
                 ) : (
                   <>
-                    Save Listing <ChevronRight className="w-4 h-4" />
+                    Save as Draft <ChevronRight className="w-4 h-4" />
                   </>
                 )}
               </Button>
@@ -1106,15 +1106,16 @@ export default function ImportListing() {
               </div>
 
               <div>
-                <h2 className="text-2xl font-bold">Listing Saved!</h2>
+                <h2 className="text-2xl font-bold">
+                  {isPublished ? "You're Live! 🎉" : "Draft Saved"}
+                </h2>
                 {isPublished ? (
                   <p className="text-muted-foreground mt-2">
-                    Your listing is now <span className="text-green-600 font-semibold">live</span> and visible to students.
+                    Your listing is now <span className="text-green-600 font-semibold">live</span> and visible to students on BridgeStay.
                   </p>
                 ) : (
                   <p className="text-muted-foreground mt-2">
-                    Your listing has been created as a draft. Publish it now
-                    to make it visible to students, or do it later from your dashboard.
+                    Publish now to make it visible to students — or come back to it later from your dashboard.
                   </p>
                 )}
               </div>

@@ -295,8 +295,12 @@ function StudentDashboard() {
 
 function LandlordDashboard() {
   const { data: stats, isLoading: statsLoading } = trpc.stats.landlord.useQuery();
-  const { data: listings, isLoading: listingsLoading } = trpc.apartments.myListings.useQuery();
+  const { data: listings, isLoading: listingsLoading, refetch: refetchListings } = trpc.apartments.myListings.useQuery();
   const { data: applications, isLoading: appsLoading } = trpc.applications.landlordApplications.useQuery({});
+
+  const publishMutation = trpc.apartments.publish.useMutation({
+    onSuccess: () => refetchListings(),
+  });
 
   return (
     <div className="space-y-8">
@@ -373,16 +377,18 @@ function LandlordDashboard() {
           <CardHeader>
             <CardTitle>Quick Actions</CardTitle>
           </CardHeader>
-          <CardContent className="flex gap-4">
-            <Button className="gap-2" onClick={() => alert("Create listing coming soon!")}>
-              <Plus className="w-4 h-4" />
-              Add New Property
-            </Button>
-            <Button variant="outline" className="gap-2 bg-transparent" onClick={() => alert("Coming soon!")}>
+          <CardContent className="flex flex-wrap gap-3">
+            <Link href="/import-listing">
+              <Button className="gap-2 bg-green-600 hover:bg-green-700 text-white">
+                <MessageSquare className="w-4 h-4" />
+                Import from WeChat
+              </Button>
+            </Link>
+            <Button variant="outline" className="gap-2 bg-transparent" disabled title="Coming soon">
               <BarChart3 className="w-4 h-4" />
-              View Analytics
+              Analytics
             </Button>
-            <Button variant="outline" className="gap-2 bg-transparent" onClick={() => alert("Coming soon!")}>
+            <Button variant="outline" className="gap-2 bg-transparent" disabled title="Coming soon">
               <MessageSquare className="w-4 h-4" />
               Messages
             </Button>
@@ -404,51 +410,82 @@ function LandlordDashboard() {
             </div>
           ) : listings && listings.length > 0 ? (
             <div className="grid gap-4">
-              {listings.map((listing: any) => (
-                <motion.div key={listing.id} {...fadeInUp}>
-                  <Card className="bg-card border-border">
-                    <CardContent className="p-4">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-4">
-                          <div className="w-16 h-16 rounded-lg bg-muted flex items-center justify-center">
-                            <Building2 className="w-8 h-8 text-muted-foreground" />
+              {listings.map((listing: any) => {
+                const thumbs = listing.images
+                  ? (() => { try { return JSON.parse(listing.images); } catch { return []; } })()
+                  : [];
+                const thumb = thumbs[0] || null;
+                const isDraft = listing.status === "draft";
+                const isPublishing = publishMutation.isPending && publishMutation.variables?.id === listing.id;
+
+                return (
+                  <motion.div key={listing.id} {...fadeInUp}>
+                    <Card className="bg-card border-border">
+                      <CardContent className="p-4">
+                        <div className="flex items-center justify-between gap-4">
+                          {/* Thumbnail */}
+                          <div className="w-16 h-16 rounded-lg bg-muted flex-shrink-0 overflow-hidden flex items-center justify-center">
+                            {thumb ? (
+                              <img src={thumb} alt={listing.title} className="w-full h-full object-cover" />
+                            ) : (
+                              <Building2 className="w-8 h-8 text-muted-foreground" />
+                            )}
                           </div>
-                          <div>
-                            <h3 className="font-semibold">{listing.title}</h3>
+
+                          {/* Info */}
+                          <div className="flex-1 min-w-0">
+                            <h3 className="font-semibold truncate">{listing.title}</h3>
                             <p className="text-sm text-muted-foreground">
                               {listing.city}, {listing.state} • ${Number(listing.monthlyRent).toLocaleString()}/mo
                             </p>
-                            <div className="flex items-center gap-4 mt-1 text-sm text-muted-foreground">
+                            <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground">
                               <span className="flex items-center gap-1">
                                 <Eye className="w-3 h-3" />
                                 {listing.viewCount} views
                               </span>
+                              <Badge
+                                className={
+                                  listing.status === "active"
+                                    ? "bg-green-500/20 text-green-600 border-0 text-xs"
+                                    : listing.status === "rented"
+                                    ? "bg-blue-500/20 text-blue-400 border-0 text-xs"
+                                    : "bg-amber-500/15 text-amber-600 border-0 text-xs"
+                                }
+                              >
+                                {listing.status === "active" ? "● Live" : listing.status === "draft" ? "○ Draft" : listing.status}
+                              </Badge>
                             </div>
                           </div>
+
+                          {/* Actions */}
+                          <div className="flex items-center gap-2 flex-shrink-0">
+                            {isDraft && (
+                              <Button
+                                size="sm"
+                                className="bg-green-600 hover:bg-green-700 text-white gap-1"
+                                onClick={() => publishMutation.mutate({ id: listing.id })}
+                                disabled={isPublishing}
+                              >
+                                {isPublishing ? (
+                                  <Loader2 className="w-3 h-3 animate-spin" />
+                                ) : (
+                                  <CheckCircle2 className="w-3 h-3" />
+                                )}
+                                Publish
+                              </Button>
+                            )}
+                            <Link href={`/apartments/${listing.id}`}>
+                              <Button variant="outline" size="sm" className="bg-transparent">
+                                View
+                              </Button>
+                            </Link>
+                          </div>
                         </div>
-                        <div className="flex items-center gap-4">
-                          <Badge
-                            className={
-                              listing.status === "active"
-                                ? "bg-green-500/20 text-green-400 border-0"
-                                : listing.status === "rented"
-                                ? "bg-blue-500/20 text-blue-400 border-0"
-                                : "bg-muted text-muted-foreground border-0"
-                            }
-                          >
-                            {listing.status}
-                          </Badge>
-                          <Link href={`/apartments/${listing.id}`}>
-                            <Button variant="outline" size="sm" className="bg-transparent">
-                              View
-                            </Button>
-                          </Link>
-                        </div>
-                      </div>
-                    </CardContent>
-                  </Card>
-                </motion.div>
-              ))}
+                      </CardContent>
+                    </Card>
+                  </motion.div>
+                );
+              })}
             </div>
           ) : (
             <Card className="bg-card border-border">
@@ -458,10 +495,12 @@ function LandlordDashboard() {
                 <p className="text-muted-foreground mb-4">
                   Create your first property listing to start receiving applications.
                 </p>
-                <Button onClick={() => alert("Create listing coming soon!")}>
-                  <Plus className="w-4 h-4 mr-2" />
-                  Add Your First Property
-                </Button>
+                <Link href="/import-listing">
+                  <Button className="gap-2 bg-green-600 hover:bg-green-700 text-white">
+                    <MessageSquare className="w-4 h-4" />
+                    Import from WeChat
+                  </Button>
+                </Link>
               </CardContent>
             </Card>
           )}
