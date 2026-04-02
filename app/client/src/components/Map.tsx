@@ -76,7 +76,7 @@
 
 /// <reference types="@types/google.maps" />
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { usePersistFn } from "@/hooks/usePersistFn";
 import { cn } from "@/lib/utils";
 
@@ -92,18 +92,26 @@ const FORGE_BASE_URL =
   "https://forge.butterfly-effect.dev";
 const MAPS_PROXY_URL = `${FORGE_BASE_URL}/v1/maps/proxy`;
 
-function loadMapScript() {
+// Returns true on success, false on failure. Never hangs.
+function loadMapScript(): Promise<boolean> {
   return new Promise(resolve => {
+    // If already loaded, resolve immediately.
+    if (window.google?.maps) {
+      resolve(true);
+      return;
+    }
     const script = document.createElement("script");
     script.src = `${MAPS_PROXY_URL}/maps/api/js?key=${API_KEY}&v=weekly&libraries=marker,places,geocoding,geometry`;
     script.async = true;
     script.crossOrigin = "anonymous";
     script.onload = () => {
-      resolve(null);
-      script.remove(); // Clean up immediately
+      resolve(true);
+      script.remove();
     };
     script.onerror = () => {
-      console.error("Failed to load Google Maps script");
+      console.warn("[MapView] Failed to load Google Maps script — API key may be missing or invalid.");
+      script.remove();
+      resolve(false);
     };
     document.head.appendChild(script);
   });
@@ -111,7 +119,7 @@ function loadMapScript() {
 
 interface MapViewProps {
   className?: string;
-  initialCenter?: google.maps.LatLngLiteral;
+  initialCenter?: { lat: number; lng: number };
   initialZoom?: number;
   onMapReady?: (map: google.maps.Map) => void;
 }
@@ -124,30 +132,80 @@ export function MapView({
 }: MapViewProps) {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<google.maps.Map | null>(null);
+  const [mapError, setMapError] = useState(false);
 
   const init = usePersistFn(async () => {
-    await loadMapScript();
-    if (!mapContainer.current) {
-      console.error("Map container not found");
+    // If no API key configured, skip script load entirely — OSM fallback renders below.
+    if (!API_KEY) {
+      setMapError(true);
       return;
     }
-    map.current = new window.google.maps.Map(mapContainer.current, {
-      zoom: initialZoom,
-      center: initialCenter,
-      mapTypeControl: true,
-      fullscreenControl: true,
-      zoomControl: true,
-      streetViewControl: true,
-      mapId: "DEMO_MAP_ID",
-    });
-    if (onMapReady) {
-      onMapReady(map.current);
+
+    const loaded = await loadMapScript();
+    if (!loaded || !window.google?.maps) {
+      setMapError(true);
+      return;
+    }
+    if (!mapContainer.current) return;
+
+    try {
+      map.current = new window.google.maps.Map(mapContainer.current, {
+        zoom: initialZoom,
+        center: initialCenter,
+        mapTypeControl: true,
+        fullscreenControl: true,
+        zoomControl: true,
+        streetViewControl: true,
+        mapId: "DEMO_MAP_ID",
+      });
+      if (onMapReady) {
+        onMapReady(map.current);
+      }
+    } catch (err) {
+      console.warn("[MapView] Map initialization failed:", err);
+      setMapError(true);
     }
   });
 
   useEffect(() => {
     init();
   }, [init]);
+
+  // Fallback: OpenStreetMap iframe — no API key required.
+  if (mapError) {
+    const { lat, lng } = initialCenter;
+    const delta = 0.008;
+    const bbox = `${lng - delta},${lat - delta},${lng + delta},${lat + delta}`;
+    // Use a default center instead of a map if coords are the US geographic center (no geocode).
+    const isDefaultCenter = Math.abs(lat - 39.8283) < 0.01 && Math.abs(lng + 98.5795) < 0.01;
+
+    if (isDefaultCenter) {
+      return (
+        <div
+          className={cn(
+            "w-full h-[500px] flex flex-col items-center justify-center gap-2 bg-muted/40 rounded-xl border border-border text-muted-foreground text-sm",
+            className
+          )}
+        >
+          <span className="text-2xl">📍</span>
+          <p className="font-medium">Map unavailable</p>
+          <p className="text-xs opacity-70 text-center px-4">
+            Add <code className="bg-muted px-1 rounded">VITE_FRONTEND_FORGE_API_KEY</code> to{" "}
+            <code className="bg-muted px-1 rounded">.env</code> to enable the interactive map.
+          </p>
+        </div>
+      );
+    }
+
+    return (
+      <iframe
+        className={cn("w-full h-[500px] border-0 rounded-xl", className)}
+        src={`https://www.openstreetmap.org/export/embed.html?bbox=${bbox}&layer=mapnik&marker=${lat}%2C${lng}`}
+        title="Property location"
+        loading="lazy"
+      />
+    );
+  }
 
   return (
     <div ref={mapContainer} className={cn("w-full h-[500px]", className)} />

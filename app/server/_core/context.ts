@@ -20,7 +20,7 @@ const DEMO_USER: User = {
   name: "Demo Landlord",
   email: "demo@bridgestay.dev",
   loginMethod: "demo",
-  role: "landlord",
+  role: "admin", // admin role so imported listings go live as "active" immediately in dev
   stripeCustomerId: null,
   createdAt: new Date(0),
   updatedAt: new Date(0),
