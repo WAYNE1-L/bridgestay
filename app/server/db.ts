@@ -249,11 +249,13 @@ export async function getApartments(filters: ApartmentFilters = {}, limit = 20, 
   if (filters.propertyType) {
     conditions.push(eq(apartments.propertyType, filters.propertyType as any));
   }
-  if (filters.petsAllowed !== undefined) {
-    conditions.push(eq(apartments.petsAllowed, filters.petsAllowed));
+  // Only filter when the user explicitly wants pet-friendly / parking-included listings.
+  // Sending false means "no preference" — don't add a WHERE clause in that case.
+  if (filters.petsAllowed === true) {
+    conditions.push(eq(apartments.petsAllowed, true));
   }
-  if (filters.parkingIncluded !== undefined) {
-    conditions.push(eq(apartments.parkingIncluded, filters.parkingIncluded));
+  if (filters.parkingIncluded === true) {
+    conditions.push(eq(apartments.parkingIncluded, true));
   }
   if (filters.landlordId) {
     conditions.push(eq(apartments.landlordId, filters.landlordId));
@@ -309,6 +311,29 @@ export async function getLandlordApartments(landlordId: number) {
     .from(apartments)
     .where(eq(apartments.landlordId, landlordId))
     .orderBy(desc(apartments.createdAt));
+}
+
+export async function getAllApartments(limit = 100, offset = 0) {
+  const db = await getDb();
+  if (!db) return [];
+
+  return await db.select()
+    .from(apartments)
+    .orderBy(desc(apartments.createdAt))
+    .limit(limit)
+    .offset(offset);
+}
+
+export async function deleteApartment(id: number) {
+  const db = await getDb();
+  if (!db) return;
+
+  await db.delete(savedApartments).where(eq(savedApartments.apartmentId, id));
+  await db.delete(messages).where(eq(messages.apartmentId, id));
+  await db.delete(payments).where(eq(payments.apartmentId, id));
+  await db.delete(applications).where(eq(applications.apartmentId, id));
+  await db.delete(promotions).where(eq(promotions.listingId, String(id)));
+  await db.delete(apartments).where(eq(apartments.id, id));
 }
 
 // ============ APPLICATION QUERIES ============

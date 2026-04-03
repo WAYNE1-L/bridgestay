@@ -275,13 +275,28 @@ export default function Apartments() {
     parkingIncluded: false,
   });
   
-  // Fetch apartments
+  // Fetch public active listings
   const { data: apartments, isLoading, refetch } = trpc.apartments.list.useQuery({
     ...appliedFilters,
     limit: 50,
     offset: 0,
   });
-  
+  const deleteMutation = trpc.apartments.delete.useMutation({
+    onSuccess: async () => {
+      toast.success(language === 'cn' ? '房源已删除' : 'Listing deleted');
+      await refetch();
+    },
+    onError: (error) => {
+      toast.error(error.message || (language === 'cn' ? '删除失败' : 'Failed to delete'));
+    },
+  });
+
+  // Fetch the current user's own listings (includes drafts) so newly imported
+  // listings are always visible to their owner regardless of status.
+  const { data: myListings } = trpc.apartments.myListings.useQuery(undefined, {
+    enabled: isAuthenticated,
+  });
+
   // Saved apartments
   const { data: savedApartments } = trpc.apartments.saved.useQuery(undefined, {
     enabled: isAuthenticated,
@@ -305,8 +320,16 @@ export default function Apartments() {
 
   // Merge database apartments with context listings (from AI Generator)
   const mergedApartments = useMemo(() => {
-    const dbApartments = apartments || [];
-    
+    const publicListings = apartments || [];
+    const ownerListings = myListings || [];
+
+    // Merge owner's own listings (all statuses) with public active listings.
+    // Owner listings that are already in the public list (active) are deduplicated
+    // so they don't appear twice.
+    const publicIds = new Set(publicListings.map((a: any) => a.id));
+    const ownedNotPublic = ownerListings.filter((a: any) => !publicIds.has(a.id));
+    const dbApartments = [...publicListings, ...ownedNotPublic];
+
     // Convert context listings to apartment format
     const contextApartments = contextListings.map((listing) => ({
       id: `ctx_${listing.id}`,
@@ -333,13 +356,12 @@ export default function Apartments() {
       parkingIncluded: listing.parkingIncluded ?? false,
       noSsnRequired: listing.noSsnRequired ?? true,
       featured: listing.isFeatured || false,
-      isFromContext: true,
       contact: listing.contact,
       sourceLink: listing.sourceLink,
     }));
     
-    // Combine both sources
-    const combined = [...contextApartments, ...dbApartments];
+    // DB listings first (real imports), then Supabase context listings
+    const combined = [...dbApartments, ...contextApartments];
     
     // Apply sorting
     return combined.sort((a, b) => {
@@ -353,7 +375,7 @@ export default function Apartments() {
           return 0; // Keep original order (newest first from DB)
       }
     });
-  }, [apartments, contextListings, language, sortBy]);
+  }, [apartments, myListings, contextListings, language, sortBy]);
   
   const handleSave = useCallback((apartmentId: number | string) => {
     if (!isAuthenticated) {
@@ -708,15 +730,8 @@ export default function Apartments() {
                   isSaved={typeof apartment.id === "number" && savedIds.has(apartment.id)}
                   isAdminMode={isAdminMode}
                   onDelete={async () => {
-                    // Handle delete for database apartments
                     if (typeof apartment.id === 'number') {
-                      try {
-                        // Would need to call tRPC mutation here
-                        toast.success(language === 'cn' ? '房源已删除' : 'Listing deleted');
-                        refetch();
-                      } catch {
-                        toast.error(language === 'cn' ? '删除失败' : 'Failed to delete');
-                      }
+                      deleteMutation.mutate({ id: apartment.id });
                     }
                   }}
                 />
@@ -746,12 +761,7 @@ export default function Apartments() {
                     isAdminMode={isAdminMode}
                     onDelete={async () => {
                       if (typeof apartment.id === 'number') {
-                        try {
-                          toast.success(language === 'cn' ? '房源已删除' : 'Listing deleted');
-                          refetch();
-                        } catch {
-                          toast.error(language === 'cn' ? '删除失败' : 'Failed to delete');
-                        }
+                        deleteMutation.mutate({ id: apartment.id });
                       }
                     }}
                   />

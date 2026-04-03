@@ -2,9 +2,13 @@
  * Geocoding utilities for BridgeStay listing import.
  *
  * Uses Nominatim (OpenStreetMap) — free, no API key required.
+ * Uses Google Places Text Search through the existing proxy when we need
+ * to normalize a building/property name into a reviewable street address.
  * University proximity uses the Haversine formula against the
  * universities already stored in the BridgeStay DB.
  */
+
+import { makeRequest, type PlacesSearchResult } from "./_core/map";
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -13,6 +17,18 @@ export type GeocodeResult = {
   longitude: number;
   /** Human-readable address returned by Nominatim for display only */
   displayName: string;
+};
+
+export type PropertyLookupResult = {
+  propertyName: string;
+  address: string;
+  city?: string;
+  state?: string;
+  zipCode?: string;
+  latitude: number;
+  longitude: number;
+  confidence: "high" | "medium";
+  placeId: string;
 };
 
 /** Minimal subset of the University row we actually need */
@@ -28,6 +44,10 @@ const NOMINATIM_BASE = "https://nominatim.openstreetmap.org/search";
 // Nominatim usage policy requires a descriptive User-Agent
 const USER_AGENT = "BridgeStay/1.0 (student-housing; contact@bridgestay.com)";
 const NEARBY_UNIVERSITIES_RADIUS_MILES = 15;
+const PROPERTY_NAME_ALIASES: Record<string, string[]> = {
+  bridges: ["bridges apartment homes", "bridges apartments"],
+  "avia downtown": ["avia downtown", "avia"],
+};
 
 // ── Nominatim geocoding ────────────────────────────────────────────────────
 
@@ -85,6 +105,45 @@ export async function geocodeAddress(params: {
   return null;
 }
 
+export async function lookupPropertyLocation(params: {
+  propertyName: string;
+  city: string;
+  state: string;
+}): Promise<PropertyLookupResult | null> {
+  const aliases = expandPropertyQueries(params.propertyName);
+  const city = params.city.trim();
+  const state = params.state.trim().toUpperCase();
+
+  let bestMatch: PropertyLookupResult | null = null;
+  let bestScore = -Infinity;
+  let secondBestScore = -Infinity;
+
+  for (const alias of aliases) {
+    const query = `${alias}, ${city}, ${state}`;
+    const response = await makeRequest<PlacesSearchResult>(
+      "/maps/api/place/textsearch/json",
+      { query }
+    );
+
+    for (const result of response.results ?? []) {
+      const score = scorePropertyMatch(alias, city, state, result);
+      if (score > bestScore) {
+        secondBestScore = bestScore;
+        bestScore = score;
+        bestMatch = toPropertyLookupResult(params.propertyName, result, score);
+      } else if (score > secondBestScore) {
+        secondBestScore = score;
+      }
+    }
+  }
+
+  if (!bestMatch) return null;
+  if (bestScore < 5) return null;
+  if (secondBestScore > -Infinity && bestScore - secondBestScore < 2) return null;
+
+  return bestMatch;
+}
+
 async function nominatimFetch(url: string): Promise<NominatimResult[]> {
   // AbortSignal.timeout() requires Node ≥ 17.3 — use AbortController for
   // broader compatibility.
@@ -108,6 +167,119 @@ function toGeocodeResult(r: NominatimResult): GeocodeResult {
     longitude: parseFloat(r.lon),
     displayName: r.display_name,
   };
+}
+
+function expandPropertyQueries(propertyName: string): string[] {
+  const normalized = normalizePlaceText(propertyName);
+  const explicitAliases = PROPERTY_NAME_ALIASES[normalized] ?? [];
+  const stripped = stripGenericPropertyTerms(propertyName);
+
+  return Array.from(
+    new Set(
+      [propertyName.trim(), ...explicitAliases, stripped]
+        .map(value => value.trim())
+        .filter(Boolean)
+    )
+  );
+}
+
+function scorePropertyMatch(
+  alias: string,
+  city: string,
+  state: string,
+  result: PlacesSearchResult["results"][number]
+): number {
+  const aliasNormalized = normalizePlaceText(alias);
+  const resultNameNormalized = normalizePlaceText(result.name);
+  const formatted = result.formatted_address.toLowerCase();
+  let score = 0;
+
+  if (resultNameNormalized === aliasNormalized) {
+    score += 5;
+  } else if (
+    resultNameNormalized.includes(aliasNormalized) ||
+    aliasNormalized.includes(resultNameNormalized)
+  ) {
+    score += 3;
+  }
+
+  if (formatted.includes(city.toLowerCase())) score += 2;
+  if (new RegExp(`\\b${escapeRegExp(state)}\\b`, "i").test(result.formatted_address)) {
+    score += 1;
+  }
+
+  if (
+    result.types.some(type =>
+      ["premise", "lodging", "establishment", "point_of_interest"].includes(type)
+    )
+  ) {
+    score += 1;
+  }
+
+  if (result.business_status && result.business_status !== "OPERATIONAL") {
+    score -= 1;
+  }
+
+  return score;
+}
+
+function toPropertyLookupResult(
+  propertyName: string,
+  result: PlacesSearchResult["results"][number],
+  score: number
+): PropertyLookupResult | null {
+  const parsed = parseFormattedAddress(result.formatted_address);
+  if (!parsed.address) return null;
+
+  return {
+    propertyName,
+    address: parsed.address,
+    city: parsed.city,
+    state: parsed.state,
+    zipCode: parsed.zipCode,
+    latitude: result.geometry.location.lat,
+    longitude: result.geometry.location.lng,
+    confidence: score >= 7 ? "high" : "medium",
+    placeId: result.place_id,
+  };
+}
+
+function parseFormattedAddress(formattedAddress: string) {
+  const parts = formattedAddress.split(",").map(part => part.trim()).filter(Boolean);
+  const address = parts[0] ?? "";
+  const city = parts.length >= 2 ? parts[1] : undefined;
+  const stateZip = parts.length >= 3 ? parts[2] : undefined;
+  const match = stateZip?.match(/\b([A-Z]{2})\s+(\d{5}(?:-\d{4})?)\b/);
+
+  return {
+    address,
+    city,
+    state: match?.[1],
+    zipCode: match?.[2],
+  };
+}
+
+function normalizePlaceText(value: string): string {
+  return value
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .replace(/\b(apartment|apartments|homes|home|residences?|residence|tower|towers|lofts|loft)\b/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function stripGenericPropertyTerms(value: string): string {
+  return value
+    .replace(/\bApartment Homes\b/i, "")
+    .replace(/\bApartments\b/i, "")
+    .replace(/\bResidences\b/i, "")
+    .replace(/\bHomes\b/i, "")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
 type NominatimResult = {

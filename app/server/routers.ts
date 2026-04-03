@@ -60,6 +60,29 @@ const createApartmentSchema = z.object({
   wechatContact: z.string().max(100).optional(),
 });
 
+const updateApartmentSchema = createApartmentSchema
+  .omit({
+    availableFrom: true,
+    subleaseEndDate: true,
+    applicationFee: true,
+    minLeaseTerm: true,
+    maxLeaseTerm: true,
+    petsAllowed: true,
+    parkingIncluded: true,
+  })
+  .partial()
+  .extend({
+    availableFrom: z.string().transform(s => new Date(s)).optional(),
+    subleaseEndDate: z.string().optional().transform(s => s ? new Date(s) : undefined),
+    applicationFee: z.number().optional(),
+    minLeaseTerm: z.number().optional(),
+    maxLeaseTerm: z.number().optional(),
+    petsAllowed: z.boolean().optional(),
+    parkingIncluded: z.boolean().optional(),
+    status: z.enum(["draft", "active", "pending", "rented", "inactive"]).optional(),
+    featured: z.boolean().optional(),
+  });
+
 const studentProfileSchema = z.object({
   universityName: z.string().optional(),
   universityCity: z.string().optional(),
@@ -151,6 +174,18 @@ export const appRouter = router({
         return await db.getApartments(filters, limit, offset);
       }),
 
+    adminList: protectedProcedure
+      .input(z.object({
+        limit: z.number().default(100),
+        offset: z.number().default(0),
+      }))
+      .query(async ({ ctx, input }) => {
+        if (ctx.user.role !== "admin") {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Only admins can view all listings" });
+        }
+        return await db.getAllApartments(input.limit, input.offset);
+      }),
+
     getById: publicProcedure
       .input(z.object({ id: z.number() }))
       .query(async ({ input }) => {
@@ -201,13 +236,13 @@ export const appRouter = router({
           });
         }
 
-        return { id, success: true };
+        return { id, success: true, status };
       }),
 
     update: protectedProcedure
       .input(z.object({
         id: z.number(),
-        data: createApartmentSchema.partial(),
+        data: updateApartmentSchema,
       }))
       .mutation(async ({ ctx, input }) => {
         const apartment = await db.getApartmentById(input.id);
@@ -228,6 +263,21 @@ export const appRouter = router({
         if (input.data.bathrooms) updateData.bathrooms = input.data.bathrooms.toString();
         
         await db.updateApartment(input.id, updateData);
+        return { success: true };
+      }),
+
+    delete: protectedProcedure
+      .input(z.object({ id: z.number() }))
+      .mutation(async ({ ctx, input }) => {
+        const apartment = await db.getApartmentById(input.id);
+        if (!apartment) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Apartment not found" });
+        }
+        if (apartment.landlordId !== ctx.user.id && ctx.user.role !== "admin") {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Not authorized to delete this listing" });
+        }
+
+        await db.deleteApartment(input.id);
         return { success: true };
       }),
 
@@ -761,8 +811,8 @@ export const appRouter = router({
   listings: router({
     /**
      * Extract structured listing data from WeChat text or a screenshot.
-     * Uses Gemini 2.5 Flash via the Forge API; returns a mock when the key
-     * is not configured (safe for local dev).
+     * Uses Gemini 2.5 Flash and falls back to heuristics when structured
+     * parsing is unavailable.
      */
     extractFromWeChat: publicProcedure
       .input(
@@ -780,7 +830,13 @@ export const appRouter = router({
           });
         }
         const { extractListingFromWeChat } = await import("./wechat-import");
-        return await extractListingFromWeChat(input);
+        try {
+          return await extractListingFromWeChat(input);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : "AI extraction failed";
+          console.error("[router/extractFromWeChat]", message);
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message });
+        }
       }),
 
     /**

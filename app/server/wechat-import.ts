@@ -6,10 +6,13 @@ export type ExtractedListing = {
   title: string;
   description?: string;
   propertyType?: "apartment" | "studio" | "house" | "room" | "condo" | "townhouse";
+  propertyName?: string;
   address?: string;
   city?: string;
   state?: string;
   zipCode?: string;
+  latitude?: number;
+  longitude?: number;
   bedrooms?: number;
   bathrooms?: number;
   squareFeet?: number;
@@ -26,12 +29,20 @@ export type ExtractedListing = {
   furnished?: boolean;           //带家具 → auto-adds "Furnished" to amenities
   wechatContact?: string;
   confidence: "high" | "medium" | "low";
+  extractionSource?: "gemini" | "heuristic-fallback";
+  extractionWarning?: string;
+  locationSource?: "direct_text" | "place_lookup" | "unresolved";
+  locationConfidence?: "high" | "medium" | "low";
 };
 
 // ── JSON schema for structured LLM output ─────────────────────────────────
+// NOTE: strict:true is intentionally omitted.
+// Gemini's OpenAI-compat strict mode requires every property to appear in
+// "required" — but most fields here are optional by design, so strict mode
+// would return a 400 error. Without strict, Gemini still returns valid JSON
+// that respects the schema shape.
 const LISTING_OUTPUT_SCHEMA = {
   name: "apartment_listing",
-  strict: true,
   schema: {
     type: "object",
     properties: {
@@ -42,6 +53,10 @@ const LISTING_OUTPUT_SCHEMA = {
       description: {
         type: "string",
         description: "Full English description of the property",
+      },
+      propertyName: {
+        type: "string",
+        description: "Property or building name only, e.g. 'Bridges Apartment Homes'. If only a building name is mentioned, put it here and omit address.",
       },
       propertyType: {
         type: "string",
@@ -149,43 +164,446 @@ Furniture:
 For prices shown as $1,800 or ¥1800 or 1800美金, extract the numeric USD value only.
 For dates, output ISO-8601 format (YYYY-MM-DD). If only a month/year is given, use the 1st of that month.
 For US state, infer from city if not explicitly stated (e.g. Los Angeles → CA, New York → NY).
+If the text mentions only a property/building name and not a street address, put the building name in propertyName and omit address. Never invent or guess a street address.
 If a field cannot be determined, omit it entirely (do not guess).`;
 
-// ── Dev mock (used when API key is absent) ─────────────────────────────────
-function mockExtraction(): ExtractedListing {
-  const next30 = new Date();
-  next30.setDate(next30.getDate() + 30);
+// ── City/state lookup table for heuristic extraction ──────────────────────
+const CITY_PATTERNS: Array<[RegExp, string, string]> = [
+  [/los angeles|ucla|usc|\bla\b|洛杉矶|南加/i,         "Los Angeles",    "CA"],
+  [/san francisco|\bsf\b|berkeley|stanford|旧金山|湾区/i, "San Francisco",  "CA"],
+  [/san diego|ucsd|圣地亚哥/i,                           "San Diego",      "CA"],
+  [/irvine|uci|orange county|尔湾/i,                    "Irvine",         "CA"],
+  [/new york|\bnyc\b|columbia|nyu|纽约/i,               "New York",       "NY"],
+  [/chicago|uchicago|northwestern|芝加哥/i,             "Chicago",        "IL"],
+  [/boston|mit\b|harvard|波士顿/i,                      "Boston",         "MA"],
+  [/seattle|\buw\b|washington|西雅图/i,                 "Seattle",        "WA"],
+  [/salt lake|\bslc\b|\buofu\b|犹他|盐湖城/i,           "Salt Lake City", "UT"],
+  [/austin|ut austin|奥斯汀/i,                          "Austin",         "TX"],
+  [/houston|rice university|休斯顿/i,                   "Houston",        "TX"],
+  [/dallas|smu|达拉斯/i,                                "Dallas",         "TX"],
+  [/atlanta|georgia tech|emory|亚特兰大/i,              "Atlanta",        "GA"],
+  [/miami|florida|迈阿密/i,                             "Miami",          "FL"],
+  [/minneapolis|umn|明尼阿波利斯/i,                     "Minneapolis",    "MN"],
+  [/columbus|ohio state|哥伦布/i,                       "Columbus",       "OH"],
+  [/ann arbor|umich|密歇根/i,                           "Ann Arbor",      "MI"],
+  [/pittsburgh|cmu|carnegie|匹兹堡/i,                   "Pittsburgh",     "PA"],
+  [/philadelphia|penn|drexel|费城/i,                    "Philadelphia",   "PA"],
+  [/washington.?dc|\bdc\b|georgetown|george mason/i,    "Washington",     "DC"],
+];
+
+/**
+ * Regex-based heuristic extraction used when BUILT_IN_FORGE_API_KEY is absent.
+ * Handles common Chinese/English WeChat listing patterns.
+ * Returns confidence:"low" always — the user can correct fields before saving.
+ */
+function heuristicExtraction(params: {
+  text?: string;
+  imageBase64?: string;
+}): ExtractedListing {
+  const raw = params.text ?? "";
+
+  // ── Rent ─────────────────────────────────────────────────────────────────
+  // Matches: $1,800  |  $1800/mo  |  月租$1800  |  1800/month  |  1800美金
+  const rentMatch =
+    raw.match(/\$\s*([\d,]+)\s*(?:\/mo(?:nth)?)?/i) ??
+    raw.match(/(?:月租|月付|rent)[^\d]*([\d,]+)/i) ??
+    raw.match(/([\d,]{4,})\s*(?:\/mo(?:nth)?|美金|usd|美元)/i);
+  const monthlyRent = rentMatch
+    ? parseInt(rentMatch[1].replace(/,/g, ""), 10) || undefined
+    : undefined;
+
+  // ── Bedrooms / bathrooms ──────────────────────────────────────────────────
+  // Matches: 2BR | 2bd | 2 bed | 2卧 | 2室 | 2房间 | 2B1B (bedrooms from first digit)
+  const bedMatch =
+    raw.match(/(\d)\s*(?:br|bd|bed(?:room)?s?)\b/i) ??
+    raw.match(/(\d)\s*(?:卧室?|室|房间)/) ??
+    raw.match(/(\d)[Bb]\s*\d[Bb]/); // 2B1B pattern — first digit is bedrooms
+  const bedrooms = bedMatch ? parseInt(bedMatch[1], 10) : undefined;
+
+  // Matches: 1BA | 1bath | 1卫 | 2B1B (bathrooms from second digit)
+  const bathMatch =
+    raw.match(/(\d)\s*(?:ba|bath(?:room)?s?)\b/i) ??
+    raw.match(/(\d)\s*(?:卫生间?|卫|洗手间)/) ??
+    raw.match(/\d[Bb]\s*(\d)[Bb]/); // 2B1B pattern — second digit
+  const bathrooms = bathMatch ? parseInt(bathMatch[1], 10) : undefined;
+
+  // ── Square footage ────────────────────────────────────────────────────────
+  const sqftMatch =
+    raw.match(/([\d,]+)\s*(?:sq\.?\s*ft\.?|sqft|square feet)/i) ??
+    raw.match(/([\d,]+)\s*平方英尺/);
+  const squareFeet = sqftMatch
+    ? parseInt(sqftMatch[1].replace(/,/g, ""), 10) || undefined
+    : undefined;
+
+  // ── City / state ──────────────────────────────────────────────────────────
+  let city: string | undefined;
+  let state: string | undefined;
+  for (const [pattern, c, s] of CITY_PATTERNS) {
+    if (pattern.test(raw)) {
+      city = c;
+      state = s;
+      break;
+    }
+  }
+
+  // ── Property type ─────────────────────────────────────────────────────────
+  let propertyType: ExtractedListing["propertyType"];
+  if (/studio|开间|工作室/i.test(raw) || bedrooms === 0) {
+    propertyType = "studio";
+  } else if (/独栋|独立屋|\bhouse\b/i.test(raw)) {
+    propertyType = "house";
+  } else if (/单间|独立房间|\broom\b/i.test(raw)) {
+    propertyType = "room";
+  } else if (/condo|共管/i.test(raw)) {
+    propertyType = "condo";
+  } else if (/townhouse|联排/i.test(raw)) {
+    propertyType = "townhouse";
+  } else {
+    propertyType = "apartment";
+  }
+
+  // ── Sublease ──────────────────────────────────────────────────────────────
+  const isSublease = /转租|转让|sublease|sublet/i.test(raw) || undefined;
+
+  // ── Available-from date ───────────────────────────────────────────────────
+  // ISO date: 2026-05-01 or 2026/05/01
+  const isoMatch = raw.match(/(\d{4}[-/]\d{2}[-/]\d{2})/);
+  // "May 1" / "5/1" / "5月1日"
+  const relativeMatch = raw.match(/(\d{1,2})[月/](\d{1,2})[日号]?/);
+  let availableFrom: string | undefined;
+  if (isoMatch) {
+    availableFrom = isoMatch[1].replace(/\//g, "-");
+  } else if (relativeMatch) {
+    const year = new Date().getFullYear();
+    const mm = relativeMatch[1].padStart(2, "0");
+    const dd = relativeMatch[2].padStart(2, "0");
+    availableFrom = `${year}-${mm}-${dd}`;
+  }
+
+  // ── Pets / parking ────────────────────────────────────────────────────────
+  const petsAllowed =
+    /允许宠物|可养宠|宠物友好|pet.?friendly|pets?\s*(ok|allowed)/i.test(raw) ||
+    undefined;
+  const parkingIncluded =
+    /停车位|含车位|parking\s*(?:included|free)|免费停车/i.test(raw) ||
+    undefined;
+
+  // ── Furnished ─────────────────────────────────────────────────────────────
+  const furnished =
+    /带家具|家具齐全|fully.?furnished|\bfurnished\b/i.test(raw) || undefined;
+
+  // ── Utilities ─────────────────────────────────────────────────────────────
+  const utilitiesIncluded: string[] = [];
+  if (/水电全包|all utilities|utilities included/i.test(raw))
+    utilitiesIncluded.push("Water", "Electric", "Gas");
+  else {
+    if (/含水|water included|水费/i.test(raw)) utilitiesIncluded.push("Water");
+    if (/含电|electric|电费/i.test(raw)) utilitiesIncluded.push("Electric");
+    if (/含气|gas included|气费/i.test(raw)) utilitiesIncluded.push("Gas");
+    if (/含网|wifi|internet|网费/i.test(raw)) utilitiesIncluded.push("Internet");
+  }
+
+  // ── WeChat ID ─────────────────────────────────────────────────────────────
+  const wechatMatch = raw.match(
+    /(?:微信|wechat|wx)[号码id：:＝=\s]*([A-Za-z0-9_\-]{4,20})/i
+  );
+  const wechatContact = wechatMatch?.[1];
+
+  // ── Security deposit ──────────────────────────────────────────────────────
+  const depositMatch =
+    raw.match(/(?:押金|保证金|deposit)[^\d]*([\d,]+)/i) ??
+    raw.match(/\$\s*([\d,]+)\s*(?:deposit|押金)/i);
+  const securityDeposit = depositMatch
+    ? parseInt(depositMatch[1].replace(/,/g, ""), 10) || undefined
+    : undefined;
+
+  const propertyNameMatch = raw.match(
+    /([A-Z][A-Za-z0-9&.'\- ]{2,80}(?:Apartment Homes|Apartments|Residences|Residence|Homes|Commons|Village|Lofts|Tower|Towers))/m
+  );
+  const propertyName = propertyNameMatch?.[1]?.trim();
+
+  // ── Build title ───────────────────────────────────────────────────────────
+  const parts: string[] = [];
+  if (bedrooms !== undefined) parts.push(`${bedrooms}BR`);
+  if (bathrooms !== undefined) parts.push(`${bathrooms}BA`);
+  parts.push(propertyType === "studio" ? "Studio" : propertyType === "house" ? "House" : "Apartment");
+  if (isSublease) parts.push("Sublease");
+  if (city) parts.push(`near ${city}`);
+  const title = parts.join(" ") || "Rental Listing";
+
+  // ── Confidence ────────────────────────────────────────────────────────────
+  const filledCount = [monthlyRent, city, bedrooms].filter(Boolean).length;
+  const confidence: ExtractedListing["confidence"] =
+    filledCount >= 2 ? "medium" : "low";
+
   return {
-    title: "[DEV MOCK] 2BR Apartment near Campus",
-    description:
-      "This is a mock extraction returned because BUILT_IN_FORGE_API_KEY is not configured. " +
-      "Add the key to your .env to enable real AI extraction via Gemini 2.5 Flash.",
-    propertyType: "apartment",
-    address: "123 University Ave",
-    city: "Los Angeles",
-    state: "CA",
-    zipCode: "90024",
-    bedrooms: 2,
-    bathrooms: 1,
-    squareFeet: 850,
-    monthlyRent: 1800,
-    securityDeposit: 1800,
-    availableFrom: next30.toISOString().split("T")[0],
-    petsAllowed: false,
-    parkingIncluded: true,
-    amenities: ["In-unit Laundry", "Air Conditioning"],
-    utilitiesIncluded: ["Water", "Internet"],
-    isSublease: true,
-    subleaseEndDate: (() => {
-      const d = new Date();
-      d.setMonth(d.getMonth() + 6);
-      return d.toISOString().split("T")[0];
-    })(),
-    leaseTerm: 6,
-    furnished: true,
-    wechatContact: "mock_landlord_wx",
-    confidence: "low",
+    title,
+    propertyType,
+    propertyName,
+    monthlyRent,
+    securityDeposit,
+    bedrooms,
+    bathrooms,
+    squareFeet,
+    city,
+    state,
+    availableFrom,
+    petsAllowed,
+    parkingIncluded,
+    furnished,
+    utilitiesIncluded: utilitiesIncluded.length ? utilitiesIncluded : undefined,
+    isSublease,
+    wechatContact,
+    confidence,
+    extractionSource: "heuristic-fallback",
   };
+}
+
+function looksLikeStreetAddress(value?: string): boolean {
+  if (!value) return false;
+  const normalized = value.trim();
+  if (!/\d/.test(normalized) || !/[A-Za-z]/.test(normalized)) return false;
+  return (
+    /\b(street|st|avenue|ave|road|rd|boulevard|blvd|drive|dr|lane|ln|court|ct|way|parkway|pkwy|place|pl|terrace|ter|circle|cir)\b/i.test(normalized) ||
+    /^\d{1,6}\s+[A-Za-z0-9]/.test(normalized)
+  );
+}
+
+function mergeWarnings(...messages: Array<string | undefined>): string | undefined {
+  const unique = Array.from(new Set(messages.map(value => value?.trim()).filter(Boolean)));
+  return unique.length ? unique.join(" | ") : undefined;
+}
+
+async function normalizeListingLocation(listing: ExtractedListing): Promise<ExtractedListing> {
+  const propertyName = listing.propertyName?.trim() || (!looksLikeStreetAddress(listing.address) ? listing.address?.trim() : undefined);
+  const hasDirectStreetAddress = looksLikeStreetAddress(listing.address);
+
+  if (hasDirectStreetAddress) {
+    return {
+      ...listing,
+      propertyName,
+      locationSource: "direct_text",
+      locationConfidence: listing.city && listing.state ? "high" : "medium",
+    };
+  }
+
+  if (!propertyName || !listing.city || !listing.state) {
+    return {
+      ...listing,
+      propertyName,
+      address: hasDirectStreetAddress ? listing.address : undefined,
+      locationSource: propertyName ? "unresolved" : undefined,
+      locationConfidence: propertyName ? "low" : undefined,
+      extractionWarning: propertyName
+        ? mergeWarnings(
+            listing.extractionWarning,
+            "Property name found but street address is unresolved; review required"
+          )
+        : listing.extractionWarning,
+    };
+  }
+
+  try {
+    const { lookupPropertyLocation } = await import("./geocoding");
+    const match = await lookupPropertyLocation({
+      propertyName,
+      city: listing.city,
+      state: listing.state,
+    });
+
+    if (!match) {
+      return {
+        ...listing,
+        propertyName,
+        address: undefined,
+        latitude: undefined,
+        longitude: undefined,
+        locationSource: "unresolved",
+        locationConfidence: "low",
+        extractionWarning: mergeWarnings(
+          listing.extractionWarning,
+          "Property name found but street address could not be verified; review required"
+        ),
+      };
+    }
+
+    return {
+      ...listing,
+      propertyName,
+      address: match.address,
+      city: match.city ?? listing.city,
+      state: match.state ?? listing.state,
+      zipCode: match.zipCode ?? listing.zipCode,
+      latitude: match.latitude,
+      longitude: match.longitude,
+      locationSource: "place_lookup",
+      locationConfidence: match.confidence,
+      extractionWarning: mergeWarnings(
+        listing.extractionWarning,
+        "Location matched from Google Places; review the normalized address before saving"
+      ),
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    console.warn("[WeChat Import] Location normalization skipped:", message);
+    return {
+      ...listing,
+      propertyName,
+      address: undefined,
+      latitude: undefined,
+      longitude: undefined,
+      locationSource: "unresolved",
+      locationConfidence: "low",
+      extractionWarning: mergeWarnings(
+        listing.extractionWarning,
+        "Property name found but Google Places lookup was unavailable; review required"
+      ),
+    };
+  }
+}
+
+function stripMarkdownFences(raw: string): string {
+  const trimmed = raw.trim();
+  const fencedMatch = trimmed.match(/^```(?:json)?\s*([\s\S]*?)\s*```$/i);
+  return fencedMatch ? fencedMatch[1].trim() : trimmed;
+}
+
+function findFirstJsonObjectBlock(raw: string): string | null {
+  const start = raw.indexOf("{");
+  if (start === -1) return null;
+
+  let depth = 0;
+  let inString = false;
+  let escaped = false;
+
+  for (let i = start; i < raw.length; i += 1) {
+    const ch = raw[i];
+
+    if (escaped) {
+      escaped = false;
+      continue;
+    }
+
+    if (ch === "\\") {
+      escaped = true;
+      continue;
+    }
+
+    if (ch === '"') {
+      inString = !inString;
+      continue;
+    }
+
+    if (inString) continue;
+
+    if (ch === "{") depth += 1;
+    if (ch === "}") {
+      depth -= 1;
+      if (depth === 0) {
+        return raw.slice(start, i + 1);
+      }
+    }
+  }
+
+  return raw.slice(start).trim() || null;
+}
+
+function summarizeRawForLog(raw: string) {
+  return {
+    length: raw.length,
+    preview: raw.slice(0, 300),
+    tail: raw.slice(-300),
+  };
+}
+
+function logFullRawGeminiResponseOnFailure(raw: string, context: Record<string, unknown>) {
+  console.error("[WeChat Import] Full raw Gemini response on parse failure:", {
+    ...context,
+    ...summarizeRawForLog(raw),
+    raw,
+  });
+}
+
+function isProbablyTruncated(raw: string, finishReason?: string | null) {
+  if (finishReason && /length|max_tokens/i.test(finishReason)) {
+    return true;
+  }
+
+  const candidate = stripMarkdownFences(raw);
+  const openBraces = (candidate.match(/{/g) || []).length;
+  const closeBraces = (candidate.match(/}/g) || []).length;
+  return openBraces > closeBraces;
+}
+
+function normalizeParsedListing(value: unknown): ExtractedListing {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw new Error("schema mismatch: root is not a JSON object");
+  }
+
+  const parsed = value as Record<string, unknown>;
+  if (typeof parsed.title !== "string" || parsed.title.trim().length === 0) {
+    throw new Error("schema mismatch: missing title");
+  }
+  if (
+    parsed.confidence !== "high" &&
+    parsed.confidence !== "medium" &&
+    parsed.confidence !== "low"
+  ) {
+    throw new Error("schema mismatch: missing or invalid confidence");
+  }
+
+  return parsed as unknown as ExtractedListing;
+}
+
+function parseGeminiListingResponse(params: {
+  raw: string;
+  finishReason?: string | null;
+}): {
+  parsed?: ExtractedListing;
+  parseIssue?: "invalid JSON from Gemini" | "truncated response" | "schema mismatch";
+  strategy?: "raw" | "stripped fences" | "extracted JSON block";
+} {
+  const candidates: Array<{
+    label: "raw" | "stripped fences" | "extracted JSON block";
+    value: string;
+  }> = [];
+
+  const stripped = stripMarkdownFences(params.raw);
+  const extracted = findFirstJsonObjectBlock(stripped);
+
+  candidates.push({ label: "raw", value: params.raw.trim() });
+  if (stripped !== params.raw.trim()) {
+    candidates.push({ label: "stripped fences", value: stripped });
+  }
+  if (extracted && !candidates.some((candidate) => candidate.value === extracted)) {
+    candidates.push({ label: "extracted JSON block", value: extracted });
+  }
+
+  let lastIssue: "invalid JSON from Gemini" | "truncated response" | "schema mismatch" =
+    isProbablyTruncated(params.raw, params.finishReason)
+      ? "truncated response"
+      : "invalid JSON from Gemini";
+
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate.value);
+      return {
+        parsed: normalizeParsedListing(parsed),
+        strategy: candidate.label,
+      };
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      if (/schema mismatch/i.test(message)) {
+        lastIssue = "schema mismatch";
+      } else if (isProbablyTruncated(candidate.value, params.finishReason)) {
+        lastIssue = "truncated response";
+      } else {
+        lastIssue = "invalid JSON from Gemini";
+      }
+    }
+  }
+
+  return { parseIssue: lastIssue };
 }
 
 // ── Main extraction function ───────────────────────────────────────────────
@@ -200,12 +618,17 @@ export async function extractListingFromWeChat(params: {
     throw new Error("Provide either text or an image to extract from");
   }
 
-  // Return mock when the LLM is not configured so the UI stays usable in dev
-  if (!ENV.forgeApiKey) {
+  // No API key — fall back to regex heuristics so the form is still usable.
+  // The user will need to review and correct the pre-filled fields manually.
+  if (!ENV.geminiApiKey) {
     console.warn(
-      "[WeChat Import] BUILT_IN_FORGE_API_KEY not set – returning mock extraction"
+      "[WeChat Import] No Gemini key found (checked GEMINI_API_KEY and BUILT_IN_FORGE_API_KEY in app/.env) – " +
+      "falling back to heuristic regex extraction. Set either key to enable AI extraction."
     );
-    return mockExtraction();
+    return await normalizeListingLocation({
+      ...heuristicExtraction(params),
+      extractionWarning: "Gemini unavailable; fallback used",
+    });
   }
 
   // Build multimodal user message
@@ -234,26 +657,66 @@ export async function extractListingFromWeChat(params: {
     }
   }
 
-  const result = await invokeLLM({
-    messages: [
-      { role: "system", content: SYSTEM_PROMPT },
-      { role: "user", content: userContent as any },
-    ],
-    outputSchema: LISTING_OUTPUT_SCHEMA,
-    maxTokens: 1024,
-  });
+  const inputSummary = text
+    ? `text (${text.length} chars)`
+    : `image (${imageBase64?.length ?? 0} base64 chars, ${mimeType})`;
+  let result;
+  try {
+    result = await invokeLLM({
+      messages: [
+        { role: "system", content: SYSTEM_PROMPT },
+        { role: "user", content: userContent as any },
+      ],
+      outputSchema: LISTING_OUTPUT_SCHEMA,
+      maxTokens: 1024,
+    });
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("[WeChat Import] ✗ Gemini call failed:", msg);
+
+    // Classify the error so the UI toast is actionable
+    if (/401|403|invalid.{0,20}key|api.?key|unauthorized/i.test(msg)) {
+      throw new Error(
+        "Gemini API key rejected — verify GEMINI_API_KEY in app/.env is a valid Google AI Studio key"
+      );
+    }
+    if (/429|quota|rate.?limit/i.test(msg)) {
+      throw new Error("Gemini rate limit reached — wait a moment then try again");
+    }
+    if (/fetch failed|ECONNREFUSED|ENOTFOUND|network/i.test(msg)) {
+      throw new Error(
+        "Cannot reach Gemini API — check network connectivity and that BUILT_IN_FORGE_API_URL is blank in app/.env"
+      );
+    }
+    throw new Error(`Gemini extraction failed: ${msg}`);
+  }
 
   const raw = result.choices[0]?.message?.content;
   if (!raw || typeof raw !== "string") {
-    throw new Error("LLM returned no content");
+    throw new Error("Gemini returned an empty response");
+  }
+  const finishReason = result.choices[0]?.finish_reason;
+  const parseResult = parseGeminiListingResponse({ raw, finishReason });
+
+  if (!parseResult.parsed) {
+    logFullRawGeminiResponseOnFailure(raw, {
+      finishReason,
+      parseIssue: parseResult.parseIssue,
+      model: result.model,
+    });
+
+    const fallback = heuristicExtraction(params);
+    console.warn(
+      `[WeChat Import] ${parseResult.parseIssue}; fallback used`
+    );
+    return await normalizeListingLocation({
+      ...fallback,
+      extractionWarning: `${parseResult.parseIssue}; fallback used`,
+    });
   }
 
-  let parsed: ExtractedListing;
-  try {
-    parsed = JSON.parse(raw);
-  } catch {
-    throw new Error(`LLM returned invalid JSON: ${raw.slice(0, 200)}`);
-  }
-
-  return parsed;
+  return await normalizeListingLocation({
+    ...parseResult.parsed,
+    extractionSource: "gemini",
+  });
 }

@@ -34,7 +34,7 @@ import {
   Check,
   MessageCircle,
 } from "lucide-react";
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useMemo } from "react";
 import { useParams, Link, useLocation } from "wouter";
 import { toast } from "sonner";
 
@@ -60,8 +60,8 @@ export default function ApartmentDetail() {
     toast.success("WeChat ID copied! Open WeChat → Add Contacts → paste to find the landlord.");
   }, []);
 
-  // Detect context listings (IDs prefixed with "ctx_" come from ListingsContext,
-  // not the DB — e.g. ctx_slc_001. These must be resolved locally, not via tRPC.)
+  // Detect Supabase/context listings (IDs prefixed with "ctx_" come from ListingsContext,
+  // not the tRPC DB. These must be resolved locally, not via tRPC.)
   const isContextId = !!params.id?.startsWith("ctx_");
   const rawContextId = isContextId ? params.id!.replace(/^ctx_/, "") : null;
 
@@ -115,6 +115,10 @@ export default function ApartmentDetail() {
         maxLeaseTerm: null,
         availableFrom: contextListing.availability.start,
         viewCount: 0,
+        // Phase 3 sublease fields — context listings are never subleases
+        isSublease: false,
+        subleaseEndDate: null,
+        wechatContact: null,
       }
     : null;
 
@@ -177,25 +181,34 @@ export default function ApartmentDetail() {
     navigate(`/apply/${params.id}`);
   }, [isAuthenticated, navigate, params.id]);
   
+  // Parse lat/lng from DB strings — null when missing or unparseable.
+  const coords = useMemo(() => {
+    if (!apartment?.latitude || !apartment?.longitude) return null;
+    const lat = parseFloat(apartment.latitude as string);
+    const lng = parseFloat(apartment.longitude as string);
+    if (isNaN(lat) || isNaN(lng)) return null;
+    return { lat, lng };
+  }, [apartment?.latitude, apartment?.longitude]);
+
+  // Full address string for Priority C fallback.
+  const addressString = useMemo(() => {
+    if (!apartment) return undefined;
+    return [apartment.address, apartment.city, apartment.state, apartment.zipCode]
+      .filter(Boolean)
+      .join(", ") || undefined;
+  }, [apartment?.address, apartment?.city, apartment?.state, apartment?.zipCode]);
+
   const handleMapReady = useCallback((map: google.maps.Map) => {
     mapRef.current = map;
-    
-    if (apartment?.latitude && apartment?.longitude) {
-      const position = {
-        lat: parseFloat(apartment.latitude),
-        lng: parseFloat(apartment.longitude),
-      };
-      
-      map.setCenter(position);
-      map.setZoom(15);
-      
+
+    if (coords) {
       new google.maps.marker.AdvancedMarkerElement({
         map,
-        position,
-        title: apartment.title,
+        position: coords,
+        title: apartment?.title ?? undefined,
       });
     }
-  }, [apartment]);
+  }, [coords, apartment?.title]);
   
   if (isLoading) {
     return (
@@ -470,14 +483,10 @@ export default function ApartmentDetail() {
               {/* Map */}
               <motion.div {...fadeInUp}>
                 <h2 className="text-xl font-semibold mb-4">Location</h2>
-                <div className="rounded-xl overflow-hidden border border-border h-[400px]">
+                <div className="rounded-xl overflow-hidden border border-border">
                   <MapView
-                    className="h-full"
-                    initialCenter={
-                      apartment.latitude && apartment.longitude
-                        ? { lat: parseFloat(apartment.latitude), lng: parseFloat(apartment.longitude) }
-                        : { lat: 39.8283, lng: -98.5795 }
-                    }
+                    coords={coords}
+                    address={addressString}
                     initialZoom={15}
                     onMapReady={handleMapReady}
                   />

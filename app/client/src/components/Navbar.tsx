@@ -22,7 +22,7 @@ export function Navbar() {
   const navLinks = isAdmin ? [
     { href: "/", label: language === "cn" ? "首页" : "Home", icon: Home },
     { href: "/apartments", label: language === "cn" ? "房源列表" : "Listings", icon: Search },
-    { href: "/admin/generator", label: language === "cn" ? "发布房源" : "Add Property", icon: FileText },
+    { href: "/import-listing", label: language === "cn" ? "AI 房源导入" : "AI Import", icon: FileText },
   ] : [
     { href: "/", label: language === "cn" ? "首页" : "Home", icon: Home },
     { href: "/apartments", label: language === "cn" ? "房源列表" : "Listings", icon: Search },

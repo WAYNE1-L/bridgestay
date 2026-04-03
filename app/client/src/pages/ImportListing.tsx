@@ -47,10 +47,13 @@ type ExtractedListing = {
   title: string;
   description?: string;
   propertyType?: string;
+  propertyName?: string;
   address?: string;
   city?: string;
   state?: string;
   zipCode?: string;
+  latitude?: number;
+  longitude?: number;
   bedrooms?: number;
   bathrooms?: number;
   squareFeet?: number;
@@ -67,6 +70,10 @@ type ExtractedListing = {
   furnished?: boolean;
   wechatContact?: string;
   confidence: "high" | "medium" | "low";
+  extractionSource?: "gemini" | "heuristic-fallback";
+  extractionWarning?: string;
+  locationSource?: "direct_text" | "place_lookup" | "unresolved";
+  locationConfidence?: "high" | "medium" | "low";
 };
 
 type PropertyType =
@@ -103,12 +110,6 @@ type FormState = {
 
 // ── Helpers ────────────────────────────────────────────────────────────────
 
-function defaultAvailableFrom() {
-  const d = new Date();
-  d.setDate(d.getDate() + 30);
-  return d.toISOString().split("T")[0];
-}
-
 function makeDefaultForm(): FormState {
   return {
     title: "",
@@ -123,7 +124,7 @@ function makeDefaultForm(): FormState {
     squareFeet: "",
     monthlyRent: "",
     securityDeposit: "",
-    availableFrom: defaultAvailableFrom(),
+    availableFrom: "",
     petsAllowed: false,
     parkingIncluded: false,
     amenitiesText: "",
@@ -196,7 +197,7 @@ const CONFIDENCE = {
 
 // ── Step indicator ─────────────────────────────────────────────────────────
 
-const STEPS = ["Paste / Upload", "Review & Edit", "Done"] as const;
+const STEPS = ["Input · 输入", "Review · 审核", "Done · 完成"] as const;
 type Step = "input" | "review" | "success";
 
 function StepBar({ current }: { current: Step }) {
@@ -238,8 +239,7 @@ export default function ImportListing() {
   // Step
   const [step, setStep] = useState<Step>("input");
 
-  // Step 1 state
-  const [inputMode, setInputMode] = useState<"text" | "image">("text");
+  // Step 1 state — text and image are both always visible; at least one is required
   const [inputText, setInputText] = useState("");
   const [imageData, setImageData] = useState<{
     base64: string;
@@ -276,10 +276,28 @@ export default function ImportListing() {
     onSuccess(data) {
       setExtracted(data);
       setForm((prev) => applyExtracted(prev, data));
+      if (
+        data.address &&
+        typeof data.latitude === "number" &&
+        typeof data.longitude === "number"
+      ) {
+        setGeocodeStatus("found");
+        setGeocodedData({
+          latitude: data.latitude,
+          longitude: data.longitude,
+          displayName: [data.address, data.city, data.state, data.zipCode]
+            .filter(Boolean)
+            .join(", "),
+          nearbyUniversities: [],
+        });
+      } else {
+        setGeocodeStatus("idle");
+        setGeocodedData(null);
+      }
       setStep("review");
     },
     onError(err) {
-      toast.error("Extraction failed: " + err.message);
+      toast.error(err.message);
     },
   });
 
@@ -291,6 +309,7 @@ export default function ImportListing() {
         return;
       }
       setSavedId(data.id);
+      setIsPublished(data.status === "active");
       setStep("success");
     },
     onError(err) {
@@ -375,18 +394,14 @@ export default function ImportListing() {
   }
 
   function handleExtract() {
-    if (inputMode === "text" && !inputText.trim()) {
-      toast.error("Please paste some WeChat text first");
-      return;
-    }
-    if (inputMode === "image" && !imageData) {
-      toast.error("Please upload a screenshot first");
+    if (!inputText.trim() && !imageData) {
+      toast.error("Please paste listing text or upload a screenshot first");
       return;
     }
     extractMutation.mutate({
-      text: inputMode === "text" ? inputText : undefined,
-      imageBase64: inputMode === "image" ? imageData?.base64 : undefined,
-      mimeType: inputMode === "image" ? imageData?.mimeType : undefined,
+      text: inputText.trim() || undefined,
+      imageBase64: imageData?.base64,
+      mimeType: imageData?.mimeType,
     });
   }
 
@@ -399,7 +414,7 @@ export default function ImportListing() {
       toast.error("Title must be at least 5 characters");
       return;
     }
-    if (form.address.length < 5) {
+    if (form.address.length < 5 || !/\d/.test(form.address) || !/[A-Za-z]/.test(form.address)) {
       toast.error("Please enter a valid street address");
       return;
     }
@@ -484,6 +499,7 @@ export default function ImportListing() {
     setIsPublished(false);
     setGeocodeStatus("idle");
     setGeocodedData(null);
+    if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
   function resetGeocodeOnBack() {
@@ -507,15 +523,16 @@ export default function ImportListing() {
               Dashboard
             </Link>
             <ChevronRight className="w-4 h-4" />
-            <span>Import from WeChat</span>
+            <span>AI 房源导入</span>
           </div>
           <h1 className="text-3xl font-bold flex items-center gap-3">
-            <MessageSquare className="w-8 h-8 text-green-500" />
-            Import from WeChat
+            <Wand2 className="w-8 h-8 text-primary" />
+            AI Listing Import
+            <span className="text-lg font-normal text-muted-foreground">· AI 房源导入</span>
           </h1>
           <p className="text-muted-foreground mt-2">
-            Paste a WeChat listing message or upload a screenshot — AI extracts
-            the details so you can review and publish in seconds.
+            Paste listing text or upload a screenshot — Chinese or English, WeChat or any source.
+            AI extracts the details for you to review and publish in seconds.
           </p>
         </div>
 
@@ -525,94 +542,81 @@ export default function ImportListing() {
         {step === "input" && (
           <Card>
             <CardHeader>
-              <CardTitle>WeChat listing input</CardTitle>
+              <CardTitle>Add listing content · 添加房源内容</CardTitle>
               <CardDescription>
-                Choose how to provide the listing content
+                Paste text, upload a screenshot, or both — AI handles Chinese and English
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-6">
-              {/* Mode toggle */}
-              <div className="flex rounded-lg border border-border overflow-hidden">
-                <button
-                  onClick={() => setInputMode("text")}
-                  className={`flex-1 px-4 py-2.5 text-sm font-medium flex items-center justify-center gap-2 transition-colors ${
-                    inputMode === "text"
-                      ? "bg-primary text-primary-foreground"
-                      : "hover:bg-muted"
-                  }`}
-                >
-                  <MessageSquare className="w-4 h-4" />
-                  Paste Text
-                </button>
-                <button
-                  onClick={() => setInputMode("image")}
-                  className={`flex-1 px-4 py-2.5 text-sm font-medium flex items-center justify-center gap-2 transition-colors ${
-                    inputMode === "image"
-                      ? "bg-primary text-primary-foreground"
-                      : "hover:bg-muted"
-                  }`}
-                >
-                  <ImageIcon className="w-4 h-4" />
-                  Upload Screenshot
-                </button>
+              {/* Text input — always visible, primary input */}
+              <div className="space-y-2">
+                <Label htmlFor="listing-text" className="flex items-center gap-2">
+                  <MessageSquare className="w-4 h-4 text-green-500" />
+                  Paste listing text
+                </Label>
+                <Textarea
+                  id="listing-text"
+                  value={inputText}
+                  onChange={(e) => setInputText(e.target.value)}
+                  placeholder={`Paste WeChat listing text here — Chinese or English\n\nExample:\n整洁2室1卫公寓出租\n位于洛杉矶Westwood区，近UCLA\n月租$1800，押金$1800，含水电\n宠物友好，含停车位，带家具\n可入住：2026年5月1日，合同至12月\n转租 / 微信：landlord_wx123`}
+                  className="h-52 font-mono text-sm resize-none"
+                />
               </div>
 
-              {/* Text input */}
-              {inputMode === "text" && (
-                <div className="space-y-2">
-                  <Label>WeChat message text</Label>
-                  <Textarea
-                    value={inputText}
-                    onChange={(e) => setInputText(e.target.value)}
-                    placeholder={`Paste your WeChat listing message here…\n\nExample:\n整洁2室1卫公寓出租\n位于洛杉矶Westwood区\n月租$1800，押金$1800\n宠物友好，含停车位\n可入住日期：2026年4月1日\n微信：landlord123`}
-                    className="h-52 font-mono text-sm resize-none"
-                  />
-                </div>
-              )}
+              {/* Divider */}
+              <div className="flex items-center gap-3">
+                <div className="flex-1 h-px bg-border" />
+                <span className="text-xs text-muted-foreground font-medium">
+                  OR ALSO ATTACH A SCREENSHOT
+                </span>
+                <div className="flex-1 h-px bg-border" />
+              </div>
 
-              {/* Image input */}
-              {inputMode === "image" && (
-                <div className="space-y-3">
-                  <Label>WeChat screenshot</Label>
-                  <input
-                    ref={fileInputRef}
-                    type="file"
-                    accept="image/*"
-                    onChange={handleFileChange}
-                    className="hidden"
-                  />
-                  <div
-                    onClick={() => fileInputRef.current?.click()}
-                    className={`border-2 border-dashed rounded-lg p-10 text-center cursor-pointer transition-colors ${
-                      imageData
-                        ? "border-green-500 bg-green-500/5"
-                        : "border-border hover:border-primary hover:bg-primary/5"
-                    }`}
-                  >
-                    {imageData ? (
-                      <div className="space-y-2">
-                        <CheckCircle2 className="w-10 h-10 text-green-500 mx-auto" />
-                        <p className="font-medium text-green-600 dark:text-green-400">
+              {/* Image input — always visible, optional */}
+              <div className="space-y-3">
+                <Label className="flex items-center gap-2">
+                  <ImageIcon className="w-4 h-4 text-muted-foreground" />
+                  Attach a WeChat screenshot
+                  <span className="text-xs text-muted-foreground font-normal ml-1">(optional)</span>
+                </Label>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="image/*"
+                  onChange={handleFileChange}
+                  className="hidden"
+                />
+                <div
+                  onClick={() => fileInputRef.current?.click()}
+                  className={`border-2 border-dashed rounded-lg p-6 text-center cursor-pointer transition-colors ${
+                    imageData
+                      ? "border-green-500 bg-green-500/5"
+                      : "border-border hover:border-primary hover:bg-primary/5"
+                  }`}
+                >
+                  {imageData ? (
+                    <div className="flex items-center justify-center gap-3">
+                      <CheckCircle2 className="w-6 h-6 text-green-500 shrink-0" />
+                      <div className="text-left min-w-0">
+                        <p className="font-medium text-green-600 dark:text-green-400 truncate">
                           {imageName}
                         </p>
-                        <p className="text-sm text-muted-foreground">
+                        <p className="text-xs text-muted-foreground">
                           Click to replace
                         </p>
                       </div>
-                    ) : (
-                      <div className="space-y-2">
-                        <Upload className="w-10 h-10 text-muted-foreground mx-auto" />
-                        <p className="font-medium">
-                          Drop screenshot here or click to browse
-                        </p>
-                        <p className="text-sm text-muted-foreground">
-                          PNG, JPG up to 10 MB
-                        </p>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-center gap-3 text-muted-foreground">
+                      <Upload className="w-6 h-6 shrink-0" />
+                      <div className="text-left">
+                        <p className="font-medium text-sm">Drop screenshot or click to browse</p>
+                        <p className="text-xs">PNG, JPG up to 10 MB</p>
                       </div>
-                    )}
-                  </div>
+                    </div>
+                  )}
                 </div>
-              )}
+              </div>
 
               <Button
                 onClick={handleExtract}
@@ -633,7 +637,7 @@ export default function ImportListing() {
               </Button>
 
               <p className="text-xs text-center text-muted-foreground">
-                Powered by Gemini 2.5 Flash · Works in Chinese and English
+                AI 提取 · Powered by Gemini 2.5 Flash · Chinese &amp; English
               </p>
             </CardContent>
           </Card>
@@ -652,6 +656,11 @@ export default function ImportListing() {
                 >
                   <Icon className="w-4 h-4 flex-shrink-0" />
                   <span className="text-sm font-medium">{cfg.label}</span>
+                  {extracted.extractionWarning && (
+                    <span className="text-xs font-medium rounded-full border border-amber-500/30 bg-amber-500/15 px-2 py-1 text-amber-700 dark:text-amber-300">
+                      {extracted.extractionWarning}
+                    </span>
+                  )}
                   {extracted.wechatContact && (
                     <span className="ml-auto text-xs opacity-75 flex-shrink-0">
                       WeChat: {extracted.wechatContact}
@@ -734,6 +743,24 @@ export default function ImportListing() {
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
+                {extracted.propertyName && (
+                  <div className="rounded-lg border border-border bg-muted/40 px-3 py-2 text-sm">
+                    <span className="font-medium">Property name:</span> {extracted.propertyName}
+                  </div>
+                )}
+
+                {extracted.locationSource === "place_lookup" && (
+                  <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300">
+                    Location came from a Google Places property lookup, not directly from the listing text. Please confirm the street address before saving.
+                  </div>
+                )}
+
+                {extracted.locationSource === "unresolved" && (
+                  <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-700 dark:text-amber-300">
+                    We found a property/building name but not a verified street address. Enter the full street address manually before saving.
+                  </div>
+                )}
+
                 <div className="space-y-1.5">
                   <Label>
                     Street Address{" "}
@@ -1092,12 +1119,12 @@ export default function ImportListing() {
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" /> Saving…
                   </>
-                ) : (
-                  <>
-                    Save as Draft <ChevronRight className="w-4 h-4" />
-                  </>
-                )}
-              </Button>
+                  ) : (
+                    <>
+                    Save Listing <ChevronRight className="w-4 h-4" />
+                    </>
+                  )}
+                </Button>
             </div>
           </div>
         )}
@@ -1112,7 +1139,7 @@ export default function ImportListing() {
 
               <div>
                 <h2 className="text-2xl font-bold">
-                  {isPublished ? "You're Live! 🎉" : "Draft Saved"}
+                  {isPublished ? "You're Live! 🎉" : "Listing Saved"}
                 </h2>
                 {isPublished ? (
                   <p className="text-muted-foreground mt-2">
@@ -1120,7 +1147,7 @@ export default function ImportListing() {
                   </p>
                 ) : (
                   <p className="text-muted-foreground mt-2">
-                    Publish now to make it visible to students — or come back to it later from your dashboard.
+                    Your listing was saved but is not live yet. Publish it from your dashboard when you're ready.
                   </p>
                 )}
               </div>

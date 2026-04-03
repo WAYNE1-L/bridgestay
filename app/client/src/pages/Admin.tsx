@@ -14,7 +14,7 @@ import { toast } from "sonner";
 import { Plus, Trash2, Home, ImageIcon, DollarSign, MapPin, FileText, Tag, Shield, Pencil, X, Save, Wand2, Upload, CheckCircle2, ClipboardCheck, Building2, Eye, MessageSquare, TrendingUp, BarChart3, Star, Circle, EyeOff } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
-import { Link } from "wouter";
+import { Link, useLocation } from "wouter";
 import { BridgeStayLogo } from "@/components/BridgeStayLogo";
 
 const fadeInUp = {
@@ -47,27 +47,69 @@ const emptyFormData = {
   status: "available" as "available" | "rented" | "hidden",
 };
 
+const emptyDbForm = {
+  title: "",
+  description: "",
+  propertyType: "apartment" as "apartment" | "studio" | "house" | "room" | "condo" | "townhouse",
+  address: "",
+  city: "",
+  state: "",
+  zipCode: "",
+  monthlyRent: "",
+  securityDeposit: "",
+  bedrooms: "1",
+  bathrooms: "1",
+  status: "draft" as "draft" | "active" | "pending" | "rented" | "inactive",
+  featured: false,
+};
+
 export default function Admin() {
+  const [, navigate] = useLocation();
   const { t, language } = useLanguage();
   const { listings, addListing, updateListing, deleteListing } = useListings();
   const { user, isAuthenticated } = useAuth();
   
-  // Fetch ALL apartments from database (Admin sees everything)
-  const { data: dbApartments = [] } = trpc.apartments.list.useQuery({
+  const isAdmin = user?.role === "admin";
+
+  // Fetch all DB apartments for real admin management
+  const { data: dbApartments = [], refetch: refetchDbApartments } = trpc.apartments.adminList.useQuery({
     limit: 100,
     offset: 0,
+  }, {
+    enabled: isAdmin,
   });
   
-  // Total count = context listings + database apartments
-  const totalListings = listings.length + dbApartments.length;
-  const activeListings = dbApartments.filter((a: any) => a.status === "active").length + listings.length;
+  const totalListings = dbApartments.length;
+  const activeListings = dbApartments.filter((a: any) => a.status === "active").length;
   
   const [formData, setFormData] = useState(emptyFormData);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
+  const [editingApartmentId, setEditingApartmentId] = useState<number | null>(null);
+  const [dbForm, setDbForm] = useState(emptyDbForm);
   const imageInputRef = useRef<HTMLInputElement>(null);
 
-  const isAdmin = user?.role === "admin";
+  const updateApartmentMutation = trpc.apartments.update.useMutation({
+    onSuccess: async () => {
+      await refetchDbApartments();
+      setEditingApartmentId(null);
+      setDbForm(emptyDbForm);
+      toast.success(language === "cn" ? "房源已更新" : "Listing updated");
+    },
+    onError: (error) => {
+      toast.error(error.message || (language === "cn" ? "更新失败" : "Update failed"));
+    },
+  });
+
+  const deleteApartmentMutation = trpc.apartments.delete.useMutation({
+    onSuccess: async () => {
+      await refetchDbApartments();
+      toast.success(language === "cn" ? "房源已删除" : "Listing deleted");
+    },
+    onError: (error) => {
+      toast.error(error.message || (language === "cn" ? "删除失败" : "Delete failed"));
+    },
+  });
 
   // Handle image upload with Base64 conversion
   const handleImageUpload = useCallback((file: File) => {
@@ -214,9 +256,62 @@ export default function Admin() {
   };
 
   const handleAddNew = () => {
-    resetForm();
-    setIsFormOpen(true);
-    window.scrollTo({ top: 200, behavior: "smooth" });
+    navigate("/import-listing");
+  };
+
+  const startDbEdit = (apartment: any) => {
+    setEditingApartmentId(apartment.id);
+    setDbForm({
+      title: apartment.title ?? "",
+      description: apartment.description ?? "",
+      propertyType: apartment.propertyType ?? "apartment",
+      address: apartment.address ?? "",
+      city: apartment.city ?? "",
+      state: apartment.state ?? "",
+      zipCode: apartment.zipCode ?? "",
+      monthlyRent: apartment.monthlyRent?.toString?.() ?? "",
+      securityDeposit: apartment.securityDeposit?.toString?.() ?? "",
+      bedrooms: apartment.bedrooms?.toString?.() ?? "1",
+      bathrooms: apartment.bathrooms?.toString?.() ?? "1",
+      status: apartment.status ?? "draft",
+      featured: apartment.featured ?? false,
+    });
+  };
+
+  const saveDbEdit = () => {
+    if (!editingApartmentId) return;
+    if (dbForm.title.trim().length < 5) {
+      toast.error(language === "cn" ? "标题至少需要 5 个字符" : "Title must be at least 5 characters");
+      return;
+    }
+    if (!/\d/.test(dbForm.address) || dbForm.address.trim().length < 5) {
+      toast.error(language === "cn" ? "请输入有效街道地址" : "Please enter a valid street address");
+      return;
+    }
+
+    updateApartmentMutation.mutate({
+      id: editingApartmentId,
+      data: {
+        title: dbForm.title.trim(),
+        description: dbForm.description.trim() || undefined,
+        propertyType: dbForm.propertyType,
+        address: dbForm.address.trim(),
+        city: dbForm.city.trim(),
+        state: dbForm.state.trim().toUpperCase(),
+        zipCode: dbForm.zipCode.trim(),
+        monthlyRent: Number(dbForm.monthlyRent),
+        securityDeposit: Number(dbForm.securityDeposit) || 0,
+        bedrooms: Number(dbForm.bedrooms),
+        bathrooms: Number(dbForm.bathrooms),
+        status: dbForm.status,
+        featured: dbForm.featured,
+      },
+    });
+  };
+
+  const handleDeleteDb = (id: number) => {
+    if (!window.confirm(t("admin.deleteConfirm"))) return;
+    deleteApartmentMutation.mutate({ id });
   };
 
   // Check if user is admin
@@ -280,13 +375,13 @@ export default function Admin() {
               </div>
             </div>
             <div className="flex gap-3">
-              <Link href="/admin/generator">
+              <Link href="/import-listing">
                 <Button
                   variant="outline"
                   className="h-12 px-6 rounded-xl font-medium border-primary text-primary hover:bg-primary/5"
                 >
                   <Wand2 className="w-5 h-5 mr-2" />
-                  AI 生成器
+                  AI 房源导入
                 </Button>
               </Link>
               <Link href="/admin/review">
@@ -809,25 +904,85 @@ export default function Admin() {
               <CardHeader>
                 <CardTitle className="flex items-center gap-2">
                   <Home className="w-5 h-5 text-primary" />
-                  {t("admin.manageListing")}
+                  {language === "cn" ? "数据库房源管理" : "Database Listings"}
                   <span className="ml-2 text-sm font-normal text-gray-500">
-                    ({listings.length} {language === "cn" ? "条房源" : "listings"})
+                    ({dbApartments.length} {language === "cn" ? "条房源" : "listings"})
                   </span>
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                {listings.length === 0 ? (
+                {editingApartmentId && (
+                  <div className="mb-6 rounded-xl border border-primary/20 bg-primary/5 p-4 space-y-4">
+                    <div className="flex items-center justify-between gap-3">
+                      <h3 className="font-semibold text-gray-900">
+                        {language === "cn" ? "编辑数据库房源" : "Edit DB Listing"}
+                      </h3>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => {
+                          setEditingApartmentId(null);
+                          setDbForm(emptyDbForm);
+                        }}
+                      >
+                        <X className="w-4 h-4" />
+                      </Button>
+                    </div>
+                    <div className="grid md:grid-cols-2 gap-3">
+                      <Input value={dbForm.title} onChange={(e) => setDbForm((prev) => ({ ...prev, title: e.target.value }))} placeholder="Listing title" />
+                      <Select value={dbForm.propertyType} onValueChange={(value: any) => setDbForm((prev) => ({ ...prev, propertyType: value }))}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="apartment">Apartment</SelectItem>
+                          <SelectItem value="studio">Studio</SelectItem>
+                          <SelectItem value="house">House</SelectItem>
+                          <SelectItem value="room">Room</SelectItem>
+                          <SelectItem value="condo">Condo</SelectItem>
+                          <SelectItem value="townhouse">Townhouse</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <Input value={dbForm.address} onChange={(e) => setDbForm((prev) => ({ ...prev, address: e.target.value }))} placeholder="123 Main St" />
+                      <Input value={dbForm.city} onChange={(e) => setDbForm((prev) => ({ ...prev, city: e.target.value }))} placeholder="City" />
+                      <Input value={dbForm.state} onChange={(e) => setDbForm((prev) => ({ ...prev, state: e.target.value }))} placeholder="UT" maxLength={2} />
+                      <Input value={dbForm.zipCode} onChange={(e) => setDbForm((prev) => ({ ...prev, zipCode: e.target.value }))} placeholder="84102" />
+                      <Input type="number" value={dbForm.monthlyRent} onChange={(e) => setDbForm((prev) => ({ ...prev, monthlyRent: e.target.value }))} placeholder="1450" />
+                      <Input type="number" value={dbForm.securityDeposit} onChange={(e) => setDbForm((prev) => ({ ...prev, securityDeposit: e.target.value }))} placeholder="500" />
+                      <Input type="number" value={dbForm.bedrooms} onChange={(e) => setDbForm((prev) => ({ ...prev, bedrooms: e.target.value }))} placeholder="2" />
+                      <Input type="number" value={dbForm.bathrooms} onChange={(e) => setDbForm((prev) => ({ ...prev, bathrooms: e.target.value }))} placeholder="2" />
+                      <Select value={dbForm.status} onValueChange={(value: any) => setDbForm((prev) => ({ ...prev, status: value }))}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="draft">Draft</SelectItem>
+                          <SelectItem value="active">Active</SelectItem>
+                          <SelectItem value="pending">Pending</SelectItem>
+                          <SelectItem value="rented">Rented</SelectItem>
+                          <SelectItem value="inactive">Inactive</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <div className="flex items-center justify-between rounded-md border bg-white px-3 py-2">
+                        <span className="text-sm text-gray-600">{language === "cn" ? "精选推荐" : "Featured"}</span>
+                        <Switch checked={dbForm.featured} onCheckedChange={(checked) => setDbForm((prev) => ({ ...prev, featured: checked }))} />
+                      </div>
+                    </div>
+                    <Textarea value={dbForm.description} onChange={(e) => setDbForm((prev) => ({ ...prev, description: e.target.value }))} placeholder="Description" />
+                    <Button onClick={saveDbEdit} disabled={updateApartmentMutation.isPending} className="w-full">
+                      {updateApartmentMutation.isPending ? (language === "cn" ? "保存中..." : "Saving...") : (language === "cn" ? "保存数据库修改" : "Save DB Changes")}
+                    </Button>
+                  </div>
+                )}
+
+                {dbApartments.length === 0 ? (
                   <div className="text-center py-12 text-gray-500">
-                    暂无房源数据
+                    {language === "cn" ? "暂无数据库房源" : "No database listings yet"}
                   </div>
                 ) : (
                   <div className={`grid gap-4 ${!isFormOpen ? "md:grid-cols-2 lg:grid-cols-3" : ""} max-h-[600px] overflow-y-auto pr-2`}>
-                    {listings.map((listing) => (
+                    {dbApartments.map((listing: any) => (
                       <div
                         key={listing.id}
                         className={`p-4 rounded-xl transition-colors ${
                           listing.status === 'rented' ? 'bg-gray-200 opacity-70' :
-                          listing.status === 'hidden' ? 'bg-gray-100 opacity-50' :
+                          listing.status === 'inactive' ? 'bg-gray-100 opacity-50' :
                           'bg-gray-50 hover:bg-gray-100'
                         }`}
                       >
@@ -839,10 +994,10 @@ export default function Admin() {
                             </span>
                           </div>
                         )}
-                        {listing.status === 'hidden' && (
+                        {listing.status === 'inactive' && (
                           <div className="mb-2">
                             <span className="px-2 py-1 text-xs font-medium rounded-full bg-red-500 text-white">
-                              已下架
+                              {language === "cn" ? "已下架" : "Inactive"}
                             </span>
                           </div>
                         )}
@@ -850,14 +1005,14 @@ export default function Admin() {
                         <div className="flex items-start justify-between gap-4">
                           <div className="flex-1 min-w-0">
                             <h3 className="font-semibold text-gray-900 truncate">
-                              {listing.title[language]}
+                              {listing.title}
                             </h3>
                             <p className="text-sm text-gray-600 truncate">
-                              {listing.location.address[language]}
+                              {listing.address}
                             </p>
                             <div className="flex items-center gap-2 mt-2">
                               <span className="text-primary font-bold">
-                                ${listing.price.amount}
+                                ${Number(listing.monthlyRent).toLocaleString()}
                               </span>
                               <span className="text-gray-500 text-sm">
                                 {language === "cn" ? "/月" : "/mo"}
@@ -868,7 +1023,7 @@ export default function Admin() {
                             <Button
                               variant="outline"
                               size="sm"
-                              onClick={() => handleEdit(listing)}
+                              onClick={() => startDbEdit(listing)}
                               className="text-blue-500 hover:text-blue-600 hover:bg-blue-50 border-blue-200"
                             >
                               <Pencil className="w-4 h-4" />
@@ -876,8 +1031,9 @@ export default function Admin() {
                             <Button
                               variant="outline"
                               size="sm"
-                              onClick={() => handleDelete(listing.id)}
+                              onClick={() => handleDeleteDb(listing.id)}
                               className="text-red-500 hover:text-red-600 hover:bg-red-50 border-red-200"
+                              disabled={deleteApartmentMutation.isPending}
                             >
                               <Trash2 className="w-4 h-4" />
                             </Button>
@@ -893,10 +1049,12 @@ export default function Admin() {
                               <span className="text-sm text-gray-600">精选推荐</span>
                             </div>
                             <Switch
-                              checked={listing.isFeatured || false}
+                              checked={listing.featured || false}
                               onCheckedChange={(checked) => {
-                                updateListing(listing.id, { ...listing, isFeatured: checked });
-                                toast.success(checked ? '已设为精选' : '已取消精选');
+                                updateApartmentMutation.mutate({
+                                  id: listing.id,
+                                  data: { featured: checked },
+                                });
                               }}
                               className="data-[state=checked]:bg-yellow-500"
                             />
@@ -906,33 +1064,46 @@ export default function Admin() {
                           <div className="flex items-center justify-between">
                             <span className="text-sm text-gray-600">状态</span>
                             <Select
-                              value={listing.status || 'available'}
-                              onValueChange={(value: 'available' | 'rented' | 'hidden') => {
-                                updateListing(listing.id, { ...listing, status: value });
-                                const statusLabels = { available: '招租中', rented: '已出租', hidden: '已下架' };
-                                toast.success(`状态已更新为: ${statusLabels[value]}`);
+                              value={listing.status || 'draft'}
+                              onValueChange={(value: 'draft' | 'active' | 'pending' | 'rented' | 'inactive') => {
+                                updateApartmentMutation.mutate({
+                                  id: listing.id,
+                                  data: { status: value },
+                                });
                               }}
                             >
                               <SelectTrigger className="w-28 h-8 text-sm">
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="available">
+                                <SelectItem value="active">
                                   <span className="flex items-center gap-1.5">
                                     <Circle className="w-2 h-2 fill-green-500 text-green-500" />
-                                    招租中
+                                    {language === "cn" ? "招租中" : "Active"}
+                                  </span>
+                                </SelectItem>
+                                <SelectItem value="draft">
+                                  <span className="flex items-center gap-1.5">
+                                    <Circle className="w-2 h-2 fill-amber-500 text-amber-500" />
+                                    {language === "cn" ? "草稿" : "Draft"}
+                                  </span>
+                                </SelectItem>
+                                <SelectItem value="pending">
+                                  <span className="flex items-center gap-1.5">
+                                    <Circle className="w-2 h-2 fill-blue-500 text-blue-500" />
+                                    {language === "cn" ? "待处理" : "Pending"}
                                   </span>
                                 </SelectItem>
                                 <SelectItem value="rented">
                                   <span className="flex items-center gap-1.5">
                                     <Circle className="w-2 h-2 fill-gray-500 text-gray-500" />
-                                    已出租
+                                    {language === "cn" ? "已出租" : "Rented"}
                                   </span>
                                 </SelectItem>
-                                <SelectItem value="hidden">
+                                <SelectItem value="inactive">
                                   <span className="flex items-center gap-1.5">
                                     <EyeOff className="w-3 h-3 text-red-500" />
-                                    下架
+                                    {language === "cn" ? "下架" : "Inactive"}
                                   </span>
                                 </SelectItem>
                               </SelectContent>
@@ -940,16 +1111,32 @@ export default function Admin() {
                           </div>
                         </div>
                         
-                        <div className="flex flex-wrap gap-1 mt-3">
-                          {listing.tags.map((tag, i) => (
-                            <span
-                              key={i}
-                              className="px-2 py-0.5 text-xs rounded-full bg-orange-100 text-orange-700"
-                            >
-                              {tag[language]}
-                            </span>
-                          ))}
-                        </div>
+                        {(() => {
+                          const amenities = listing.amenities
+                            ? (() => {
+                                try {
+                                  return JSON.parse(listing.amenities as string) as string[];
+                                } catch {
+                                  return [];
+                                }
+                              })()
+                            : [];
+
+                          if (amenities.length === 0) return null;
+
+                          return (
+                            <div className="flex flex-wrap gap-1 mt-3">
+                              {amenities.slice(0, 4).map((amenity: string, i: number) => (
+                                <span
+                                  key={`${listing.id}-${i}`}
+                                  className="px-2 py-0.5 text-xs rounded-full bg-orange-100 text-orange-700"
+                                >
+                                  {amenity}
+                                </span>
+                              ))}
+                            </div>
+                          );
+                        })()}
                       </div>
                     ))}
                   </div>
