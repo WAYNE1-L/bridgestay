@@ -1169,7 +1169,7 @@ export default function ImportListing() {
 
               <div className="flex flex-col sm:flex-row gap-3 justify-center">
                 <Button asChild variant={isPublished ? "default" : "outline"}>
-                  <Link href={`/apartments/${savedId}`}>View Listing</Link>
+                  <Link href={`/apartments/${savedId}`}>{isPublished ? "View Listing" : "Preview Listing"}</Link>
                 </Button>
                 <Button variant="outline" asChild>
                   <Link href="/dashboard">My Dashboard</Link>
