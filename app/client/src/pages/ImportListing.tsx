@@ -274,8 +274,9 @@ export default function ImportListing() {
 
   const extractMutation = trpc.listings.extractFromWeChat.useMutation({
     onSuccess(data) {
+      const nextForm = applyExtracted(makeDefaultForm(), data);
       setExtracted(data);
-      setForm((prev) => applyExtracted(prev, data));
+      setForm(nextForm);
       if (
         data.address &&
         typeof data.latitude === "number" &&

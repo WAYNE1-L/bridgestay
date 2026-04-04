@@ -317,6 +317,11 @@ function heuristicExtraction(params: {
     ? parseInt(depositMatch[1].replace(/,/g, ""), 10) || undefined
     : undefined;
 
+  const addressMatch = raw.match(
+    /(?:^|\n)\s*address[：:\s]+([^\n,]+(?:\b(?:street|st|avenue|ave|road|rd|boulevard|blvd|drive|dr|lane|ln|court|ct|way|parkway|pkwy|place|pl|terrace|ter|circle|cir)\b[^\n,]*)?)/i
+  );
+  const address = addressMatch?.[1]?.trim();
+
   const propertyNameMatch = raw.match(
     /([A-Z][A-Za-z0-9&.'\- ]{2,80}(?:Apartment Homes|Apartments|Residences|Residence|Homes|Commons|Village|Lofts|Tower|Towers))/m
   );
@@ -340,6 +345,7 @@ function heuristicExtraction(params: {
     title,
     propertyType,
     propertyName,
+    address,
     monthlyRent,
     securityDeposit,
     bedrooms,
