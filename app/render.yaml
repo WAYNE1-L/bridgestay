@@ -28,11 +28,11 @@ services:
         sync: false
       - key: OWNER_OPEN_ID
         sync: false
-      - key: GEMINI_API_KEY
-        sync: false
 
       # ── Optional — Render will prompt; leave blank to disable feature ────
       - key: PORT
+        sync: false
+      - key: GEMINI_API_KEY
         sync: false
       - key: STRIPE_SECRET_KEY
         sync: false
@@ -43,8 +43,4 @@ services:
       - key: VITE_ANALYTICS_ENDPOINT
         sync: false
       - key: VITE_ANALYTICS_WEBSITE_ID
-        sync: false
-      - key: VITE_SUPABASE_URL
-        sync: false
-      - key: VITE_SUPABASE_ANON_KEY
         sync: false
