@@ -49,7 +49,12 @@ let _pool: Pool | null = null;
 export async function getDb() {
   if (!_db && ENV.databaseUrl) {
     try {
-      _pool = new Pool({ connectionString: ENV.databaseUrl });
+      _pool = new Pool({
+        connectionString: ENV.databaseUrl,
+        ssl: process.env.NODE_ENV === 'production'
+          ? { rejectUnauthorized: false }
+          : false,
+      });
       _db = drizzle(_pool, { schema });
     } catch (error) {
       console.warn("[Database] Failed to connect:", error);
