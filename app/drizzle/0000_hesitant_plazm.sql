@@ -1,3 +1,35 @@
+CREATE TYPE "public"."user_role" AS ENUM('user', 'admin', 'landlord');
+--> statement-breakpoint
+CREATE TYPE "public"."visa_type" AS ENUM('F1', 'J1', 'M1', 'H1B', 'OPT', 'CPT', 'other');
+--> statement-breakpoint
+CREATE TYPE "public"."business_type" AS ENUM('individual', 'property_management', 'real_estate_company');
+--> statement-breakpoint
+CREATE TYPE "public"."property_type" AS ENUM('apartment', 'studio', 'house', 'room', 'condo', 'townhouse');
+--> statement-breakpoint
+CREATE TYPE "public"."parking_type" AS ENUM('garage', 'covered', 'street', 'lot', 'none');
+--> statement-breakpoint
+CREATE TYPE "public"."apartment_status" AS ENUM('draft', 'pending_review', 'published', 'rejected', 'archived');
+--> statement-breakpoint
+CREATE TYPE "public"."application_status" AS ENUM('draft', 'submitted', 'under_review', 'documents_requested', 'approved', 'rejected', 'withdrawn', 'lease_signed', 'deposit_paid');
+--> statement-breakpoint
+CREATE TYPE "public"."funding_source" AS ENUM('family_support', 'scholarship', 'student_loan', 'personal_savings', 'employment', 'combination');
+--> statement-breakpoint
+CREATE TYPE "public"."document_type" AS ENUM('passport', 'visa', 'i20', 'ds2019', 'enrollment_letter', 'financial_statement', 'bank_statement', 'scholarship_letter', 'guarantor_letter', 'proof_of_income', 'other');
+--> statement-breakpoint
+CREATE TYPE "public"."verification_status" AS ENUM('pending', 'verified', 'rejected', 'expired');
+--> statement-breakpoint
+CREATE TYPE "public"."payment_type" AS ENUM('application_fee', 'security_deposit', 'first_month_rent', 'monthly_rent', 'pet_deposit', 'late_fee', 'other');
+--> statement-breakpoint
+CREATE TYPE "public"."payment_status" AS ENUM('pending', 'processing', 'succeeded', 'failed', 'refunded', 'partially_refunded', 'cancelled');
+--> statement-breakpoint
+CREATE TYPE "public"."notification_type" AS ENUM('review_approved', 'review_rejected', 'promotion_active', 'promotion_expired', 'system');
+--> statement-breakpoint
+CREATE TYPE "public"."promotion_plan" AS ENUM('7_days', '30_days', '90_days');
+--> statement-breakpoint
+CREATE TYPE "public"."promotion_status" AS ENUM('pending', 'active', 'expired', 'cancelled');
+--> statement-breakpoint
+CREATE TYPE "public"."listing_report_reason" AS ENUM('unavailable', 'wrong_details', 'suspicious', 'other');
+--> statement-breakpoint
 CREATE TABLE "apartments" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"landlordId" integer NOT NULL,
