@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from "react";
+import { Fragment, useState, useRef, useCallback } from "react";
 import { motion } from "framer-motion";
 import { Navbar } from "@/components/Navbar";
 import { Button } from "@/components/ui/button";
@@ -59,7 +59,7 @@ const emptyDbForm = {
   securityDeposit: "",
   bedrooms: "1",
   bathrooms: "1",
-  status: "draft" as "draft" | "active" | "pending" | "rented" | "inactive",
+  status: "draft" as "draft" | "pending_review" | "published" | "rejected" | "archived",
   featured: false,
 };
 
@@ -78,16 +78,32 @@ export default function Admin() {
   }, {
     enabled: isAdmin,
   });
+
+  const {
+    data: reportSummary = [],
+    isLoading: isReportSummaryLoading,
+    refetch: refetchReportSummary,
+  } = trpc.apartments.reportSummary.useQuery(undefined, {
+    enabled: isAdmin,
+  });
   
   const totalListings = dbApartments.length;
-  const activeListings = dbApartments.filter((a: any) => a.status === "active").length;
+  const activeListings = dbApartments.filter((a: any) => a.status === "published").length;
   
   const [formData, setFormData] = useState(emptyFormData);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
   const [editingApartmentId, setEditingApartmentId] = useState<number | null>(null);
+  const [selectedReportListingId, setSelectedReportListingId] = useState<number | null>(null);
   const [dbForm, setDbForm] = useState(emptyDbForm);
+  const [statusFilter, setStatusFilter] = useState<"all" | "draft" | "pending_review" | "published" | "rejected" | "archived">("all");
   const imageInputRef = useRef<HTMLInputElement>(null);
+
+  const { data: selectedListingReports = [], isLoading: areListingReportsLoading } = trpc.apartments.listReportsForListing.useQuery({
+    apartmentId: selectedReportListingId ?? 0,
+  }, {
+    enabled: isAdmin && selectedReportListingId !== null,
+  });
 
   const updateApartmentMutation = trpc.apartments.update.useMutation({
     onSuccess: async () => {
@@ -109,6 +125,21 @@ export default function Admin() {
     onError: (error) => {
       toast.error(error.message || (language === "cn" ? "删除失败" : "Delete failed"));
     },
+  });
+
+  const markInactiveMutation = trpc.apartments.markInactive.useMutation({
+    onSuccess: async () => {
+      await Promise.all([refetchReportSummary(), refetchDbApartments()]);
+      toast.success(language === "cn" ? "房源已归档" : "Listing archived");
+    },
+    onError: (error) => {
+      toast.error(error.message || (language === "cn" ? "归档失败" : "Failed to archive listing"));
+    },
+  });
+
+  const filteredDbApartments = dbApartments.filter((listing: any) => {
+    if (statusFilter === "all") return true;
+    return listing.status === statusFilter;
   });
 
   // Handle image upload with Base64 conversion
@@ -169,7 +200,10 @@ export default function Admin() {
       wechat: listing.contact?.wechat || "",
       email: listing.contact?.email || "",
       adminNotes: listing.adminNotes || "",
-      status: listing.status || "available",
+      status:
+        listing.status === "rented" || listing.status === "hidden"
+          ? listing.status
+          : "available",
     });
     setEditingId(listing.id);
     setIsFormOpen(true);
@@ -256,7 +290,7 @@ export default function Admin() {
   };
 
   const handleAddNew = () => {
-    navigate("/import-listing");
+    navigate("/admin/import");
   };
 
   const startDbEdit = (apartment: any) => {
@@ -375,7 +409,7 @@ export default function Admin() {
               </div>
             </div>
             <div className="flex gap-3">
-              <Link href="/import-listing">
+              <Link href="/admin/import">
                 <Button
                   variant="outline"
                   className="h-12 px-6 rounded-xl font-medium border-primary text-primary hover:bg-primary/5"
@@ -428,7 +462,7 @@ export default function Admin() {
                   </div>
                   <div>
                     <p className="text-2xl font-bold text-gray-900">{activeListings}</p>
-                    <p className="text-sm text-gray-500">已上架</p>
+                    <p className="text-sm text-gray-500">已发布</p>
                   </div>
                 </div>
               </CardContent>
@@ -470,6 +504,120 @@ export default function Admin() {
               </Button>
             </Link>
           </div>
+
+          <Card className="border-0 shadow-soft mb-8">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <MessageSquare className="w-5 h-5 text-primary" />
+                {language === "cn" ? "房源举报汇总" : "Listing Report Summary"}
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {isReportSummaryLoading ? (
+                <div className="py-6 text-sm text-gray-500">
+                  {language === "cn" ? "正在加载举报汇总..." : "Loading report summary..."}
+                </div>
+              ) : reportSummary.length === 0 ? (
+                <div className="py-6 text-sm text-gray-500">
+                  {language === "cn" ? "暂无举报记录" : "No reports yet"}
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b text-left text-gray-500">
+                        <th className="py-2 pr-4 font-medium">{language === "cn" ? "房源" : "Listing"}</th>
+                        <th className="py-2 pr-4 font-medium">{language === "cn" ? "总数" : "Total"}</th>
+                        <th className="py-2 pr-4 font-medium">{language === "cn" ? "原因" : "Reasons"}</th>
+                        <th className="py-2 pr-4 font-medium">{language === "cn" ? "最新备注" : "Latest notes"}</th>
+                        <th className="py-2 pr-4 font-medium">{language === "cn" ? "最新举报" : "Latest"}</th>
+                        <th className="py-2 font-medium">{language === "cn" ? "操作" : "Action"}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {reportSummary.map((item) => (
+                        <Fragment key={item.apartmentId}>
+                          <tr key={item.apartmentId} className="border-b last:border-0">
+                            <td className="py-3 pr-4">
+                              <div className="font-medium text-gray-900">{item.title}</div>
+                              <div className="text-xs text-gray-500">#{item.apartmentId} · {item.status}</div>
+                            </td>
+                            <td className="py-3 pr-4 font-semibold text-gray-900">{item.totalCount}</td>
+                            <td className="py-3 pr-4 text-gray-600">
+                              unavailable {item.byReason.unavailable} · wrong_details {item.byReason.wrong_details} · suspicious {item.byReason.suspicious} · other {item.byReason.other}
+                            </td>
+                            <td className="py-3 pr-4 text-gray-600">
+                              <div className="max-w-[220px] truncate" title={item.latestReportNotes ?? ""}>
+                                {item.latestReportNotes?.trim() || "—"}
+                              </div>
+                            </td>
+                            <td className="py-3 pr-4 text-gray-600">
+                              {item.latestReportAt ? new Date(item.latestReportAt).toLocaleString() : "—"}
+                            </td>
+                            <td className="py-3">
+                              <div className="flex flex-wrap gap-2">
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  onClick={() => setSelectedReportListingId(
+                                    selectedReportListingId === item.apartmentId ? null : item.apartmentId
+                                  )}
+                                >
+                                  {selectedReportListingId === item.apartmentId
+                                    ? (language === "cn" ? "收起" : "Hide reports")
+                                    : (language === "cn" ? "查看举报" : "View reports")}
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="sm"
+                                  disabled={item.status === "archived" || markInactiveMutation.isPending}
+                                  onClick={() => markInactiveMutation.mutate({ id: item.apartmentId })}
+                                >
+                                  {item.status === "archived"
+                                    ? (language === "cn" ? "已归档" : "Archived")
+                                    : (language === "cn" ? "归档" : "Archive")}
+                                </Button>
+                              </div>
+                            </td>
+                          </tr>
+                          {selectedReportListingId === item.apartmentId && (
+                            <tr className="border-b bg-gray-50">
+                              <td colSpan={6} className="p-4">
+                                {areListingReportsLoading ? (
+                                  <div className="text-sm text-gray-500">
+                                    {language === "cn" ? "正在加载举报..." : "Loading reports..."}
+                                  </div>
+                                ) : selectedListingReports.length === 0 ? (
+                                  <div className="text-sm text-gray-500">
+                                    {language === "cn" ? "暂无举报详情" : "No report details"}
+                                  </div>
+                                ) : (
+                                  <div className="space-y-3">
+                                    {selectedListingReports.map((report) => (
+                                      <div key={report.id} className="rounded-md border bg-white p-3">
+                                        <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
+                                          <span>#{report.id}</span>
+                                          <span>{report.reason}</span>
+                                          <span>{report.createdAt ? new Date(report.createdAt).toLocaleString() : "—"}</span>
+                                        </div>
+                                        <p className="mt-2 text-sm text-gray-700 whitespace-pre-wrap">
+                                          {report.notes?.trim() || "—"}
+                                        </p>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </td>
+                            </tr>
+                          )}
+                        </Fragment>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
           <div className="grid lg:grid-cols-2 gap-8">
             {/* Add/Edit Listing Form */}
@@ -906,11 +1054,34 @@ export default function Admin() {
                   <Home className="w-5 h-5 text-primary" />
                   {language === "cn" ? "数据库房源管理" : "Database Listings"}
                   <span className="ml-2 text-sm font-normal text-gray-500">
-                    ({dbApartments.length} {language === "cn" ? "条房源" : "listings"})
+                    ({filteredDbApartments.length} {language === "cn" ? "条房源" : "listings"})
                   </span>
                 </CardTitle>
               </CardHeader>
               <CardContent>
+                <div className="mb-4 flex items-center justify-between gap-3">
+                  <span className="text-sm text-gray-500">
+                    {language === "cn" ? "按状态筛选" : "Filter by status"}
+                  </span>
+                  <Select
+                    value={statusFilter}
+                    onValueChange={(value: "all" | "draft" | "pending_review" | "published" | "rejected" | "archived") =>
+                      setStatusFilter(value)
+                    }
+                  >
+                    <SelectTrigger className="w-40">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">{language === "cn" ? "全部状态" : "All statuses"}</SelectItem>
+                      <SelectItem value="draft">{language === "cn" ? "草稿" : "Draft"}</SelectItem>
+                      <SelectItem value="pending_review">{language === "cn" ? "待审核" : "Pending review"}</SelectItem>
+                      <SelectItem value="published">{language === "cn" ? "已发布" : "Published"}</SelectItem>
+                      <SelectItem value="rejected">{language === "cn" ? "已拒绝" : "Rejected"}</SelectItem>
+                      <SelectItem value="archived">{language === "cn" ? "已归档" : "Archived"}</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
                 {editingApartmentId && (
                   <div className="mb-6 rounded-xl border border-primary/20 bg-primary/5 p-4 space-y-4">
                     <div className="flex items-center justify-between gap-3">
@@ -949,16 +1120,16 @@ export default function Admin() {
                       <Input type="number" value={dbForm.securityDeposit} onChange={(e) => setDbForm((prev) => ({ ...prev, securityDeposit: e.target.value }))} placeholder="500" />
                       <Input type="number" value={dbForm.bedrooms} onChange={(e) => setDbForm((prev) => ({ ...prev, bedrooms: e.target.value }))} placeholder="2" />
                       <Input type="number" value={dbForm.bathrooms} onChange={(e) => setDbForm((prev) => ({ ...prev, bathrooms: e.target.value }))} placeholder="2" />
-                      <Select value={dbForm.status} onValueChange={(value: any) => setDbForm((prev) => ({ ...prev, status: value }))}>
-                        <SelectTrigger><SelectValue /></SelectTrigger>
-                        <SelectContent>
-                          <SelectItem value="draft">Draft</SelectItem>
-                          <SelectItem value="active">Active</SelectItem>
-                          <SelectItem value="pending">Pending</SelectItem>
-                          <SelectItem value="rented">Rented</SelectItem>
-                          <SelectItem value="inactive">Inactive</SelectItem>
-                        </SelectContent>
-                      </Select>
+                          <Select value={dbForm.status} onValueChange={(value: any) => setDbForm((prev) => ({ ...prev, status: value }))}>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="draft">Draft</SelectItem>
+                          <SelectItem value="pending_review">Pending review</SelectItem>
+                          <SelectItem value="published">Published</SelectItem>
+                          <SelectItem value="rejected">Rejected</SelectItem>
+                          <SelectItem value="archived">Archived</SelectItem>
+                            </SelectContent>
+                          </Select>
                       <div className="flex items-center justify-between rounded-md border bg-white px-3 py-2">
                         <span className="text-sm text-gray-600">{language === "cn" ? "精选推荐" : "Featured"}</span>
                         <Switch checked={dbForm.featured} onCheckedChange={(checked) => setDbForm((prev) => ({ ...prev, featured: checked }))} />
@@ -971,33 +1142,47 @@ export default function Admin() {
                   </div>
                 )}
 
-                {dbApartments.length === 0 ? (
+                {filteredDbApartments.length === 0 ? (
                   <div className="text-center py-12 text-gray-500">
                     {language === "cn" ? "暂无数据库房源" : "No database listings yet"}
                   </div>
                 ) : (
                   <div className={`grid gap-4 ${!isFormOpen ? "md:grid-cols-2 lg:grid-cols-3" : ""} max-h-[600px] overflow-y-auto pr-2`}>
-                    {dbApartments.map((listing: any) => (
+                    {filteredDbApartments.map((listing: any) => (
                       <div
                         key={listing.id}
                         className={`p-4 rounded-xl transition-colors ${
-                          listing.status === 'rented' ? 'bg-gray-200 opacity-70' :
-                          listing.status === 'inactive' ? 'bg-gray-100 opacity-50' :
+                          listing.status === 'archived' ? 'bg-gray-100 opacity-60' :
+                          listing.status === 'rejected' ? 'bg-red-50' :
                           'bg-gray-50 hover:bg-gray-100'
                         }`}
                       >
                         {/* Status Badge */}
-                        {listing.status === 'rented' && (
+                        {listing.status === 'published' && (
                           <div className="mb-2">
-                            <span className="px-2 py-1 text-xs font-medium rounded-full bg-gray-500 text-white">
-                              已出租
+                            <span className="px-2 py-1 text-xs font-medium rounded-full bg-green-500 text-white">
+                              {language === "cn" ? "已发布" : "Published"}
                             </span>
                           </div>
                         )}
-                        {listing.status === 'inactive' && (
+                        {listing.status === 'pending_review' && (
+                          <div className="mb-2">
+                            <span className="px-2 py-1 text-xs font-medium rounded-full bg-amber-500 text-white">
+                              {language === "cn" ? "待审核" : "Pending review"}
+                            </span>
+                          </div>
+                        )}
+                        {listing.status === 'rejected' && (
                           <div className="mb-2">
                             <span className="px-2 py-1 text-xs font-medium rounded-full bg-red-500 text-white">
-                              {language === "cn" ? "已下架" : "Inactive"}
+                              {language === "cn" ? "已拒绝" : "Rejected"}
+                            </span>
+                          </div>
+                        )}
+                        {listing.status === 'archived' && (
+                          <div className="mb-2">
+                            <span className="px-2 py-1 text-xs font-medium rounded-full bg-gray-500 text-white">
+                              {language === "cn" ? "已归档" : "Archived"}
                             </span>
                           </div>
                         )}
@@ -1065,7 +1250,7 @@ export default function Admin() {
                             <span className="text-sm text-gray-600">状态</span>
                             <Select
                               value={listing.status || 'draft'}
-                              onValueChange={(value: 'draft' | 'active' | 'pending' | 'rented' | 'inactive') => {
+                              onValueChange={(value: 'draft' | 'pending_review' | 'published' | 'rejected' | 'archived') => {
                                 updateApartmentMutation.mutate({
                                   id: listing.id,
                                   data: { status: value },
@@ -1076,10 +1261,10 @@ export default function Admin() {
                                 <SelectValue />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="active">
+                                <SelectItem value="published">
                                   <span className="flex items-center gap-1.5">
                                     <Circle className="w-2 h-2 fill-green-500 text-green-500" />
-                                    {language === "cn" ? "招租中" : "Active"}
+                                    {language === "cn" ? "已发布" : "Published"}
                                   </span>
                                 </SelectItem>
                                 <SelectItem value="draft">
@@ -1088,26 +1273,53 @@ export default function Admin() {
                                     {language === "cn" ? "草稿" : "Draft"}
                                   </span>
                                 </SelectItem>
-                                <SelectItem value="pending">
+                                <SelectItem value="pending_review">
                                   <span className="flex items-center gap-1.5">
                                     <Circle className="w-2 h-2 fill-blue-500 text-blue-500" />
-                                    {language === "cn" ? "待处理" : "Pending"}
+                                    {language === "cn" ? "待审核" : "Pending review"}
                                   </span>
                                 </SelectItem>
-                                <SelectItem value="rented">
+                                <SelectItem value="rejected">
                                   <span className="flex items-center gap-1.5">
-                                    <Circle className="w-2 h-2 fill-gray-500 text-gray-500" />
-                                    {language === "cn" ? "已出租" : "Rented"}
+                                    <Circle className="w-2 h-2 fill-red-500 text-red-500" />
+                                    {language === "cn" ? "已拒绝" : "Rejected"}
                                   </span>
                                 </SelectItem>
-                                <SelectItem value="inactive">
+                                <SelectItem value="archived">
                                   <span className="flex items-center gap-1.5">
-                                    <EyeOff className="w-3 h-3 text-red-500" />
-                                    {language === "cn" ? "下架" : "Inactive"}
+                                    <EyeOff className="w-3 h-3 text-gray-500" />
+                                    {language === "cn" ? "已归档" : "Archived"}
                                   </span>
                                 </SelectItem>
                               </SelectContent>
                             </Select>
+                          </div>
+
+                          <div className="flex gap-2">
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="flex-1"
+                              onClick={() => updateApartmentMutation.mutate({
+                                id: listing.id,
+                                data: { status: "published" },
+                              })}
+                              disabled={listing.status === "published" || updateApartmentMutation.isPending}
+                            >
+                              {language === "cn" ? "发布" : "Publish"}
+                            </Button>
+                            <Button
+                              variant="outline"
+                              size="sm"
+                              className="flex-1"
+                              onClick={() => updateApartmentMutation.mutate({
+                                id: listing.id,
+                                data: { status: "archived" },
+                              })}
+                              disabled={listing.status === "archived" || updateApartmentMutation.isPending}
+                            >
+                              {language === "cn" ? "归档" : "Archive"}
+                            </Button>
                           </div>
                         </div>
                         

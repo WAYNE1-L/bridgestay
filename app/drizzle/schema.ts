@@ -134,7 +134,7 @@ export const apartments = mysqlTable("apartments", {
   virtualTourUrl: varchar("virtualTourUrl", { length: 500 }),
   
   // Status
-  status: mysqlEnum("status", ["draft", "active", "pending", "rented", "inactive"]).default("draft").notNull(),
+  status: mysqlEnum("status", ["draft", "pending_review", "published", "rejected", "archived"]).default("draft").notNull(),
   featured: boolean("featured").default(false).notNull(),
   viewCount: int("viewCount").default(0).notNull(),
   
@@ -426,3 +426,18 @@ export const promotions = mysqlTable("promotions", {
 
 export type Promotion = typeof promotions.$inferSelect;
 export type InsertPromotion = typeof promotions.$inferInsert;
+
+/**
+ * User-submitted reports for listings that are stale, incorrect, or suspicious.
+ * Lightweight moderation input — no full workflow, just persistence for triage.
+ */
+export const listingReports = mysqlTable("listing_reports", {
+  id: int("id").autoincrement().primaryKey(),
+  apartmentId: int("apartmentId").notNull(),
+  reason: mysqlEnum("reason", ["unavailable", "wrong_details", "suspicious", "other"]).notNull(),
+  notes: text("notes"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type ListingReport = typeof listingReports.$inferSelect;
+export type InsertListingReport = typeof listingReports.$inferInsert;

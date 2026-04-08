@@ -3,6 +3,7 @@ import { BridgeStayLogo, BridgeIcon } from "@/components/BridgeStayLogo";
 import { FeaturedListingCard } from "@/components/FeaturedListingCard";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { useListings } from "@/contexts/ListingsContext";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { siteContent, getText } from "@/lib/translations";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -182,12 +183,13 @@ export default function Home() {
   const searchString = useSearch();
   const { t, language } = useLanguage();
   const { allListings, isLoadingSupabase } = useListings();
+  const { user } = useAuth();
 
   // Hidden admin mode - only enabled with ?admin=true in URL
   const isAdminMode = useMemo(() => {
     const params = new URLSearchParams(searchString);
-    return params.get('admin') === 'true';
-  }, [searchString]);
+    return params.get('admin') === 'true' && user?.role === "admin";
+  }, [searchString, user?.role]);
 
   const handleSearch = () => {
     if (searchLocation.trim()) {

@@ -240,7 +240,7 @@ export function FeaturedListingCard({ listing, index, isAdminMode = false }: Fea
             <div className="flex-1" />
 
             {/* Admin Mode Buttons - Only visible with ?admin=true */}
-            {isAdminMode && (
+            {isAdminMode && isAdmin && (
               <div className="flex gap-2 mb-2">
                 {/* Source Link Button */}
                 {listing.sourceLink && (

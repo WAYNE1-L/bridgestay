@@ -20,7 +20,7 @@ const DEMO_USER: User = {
   name: "Demo Landlord",
   email: "demo@bridgestay.dev",
   loginMethod: "demo",
-  role: "admin", // admin role so imported listings go live as "active" immediately in dev
+  role: "admin", // admin role for local dev admin workflows
   stripeCustomerId: null,
   createdAt: new Date(0),
   updatedAt: new Date(0),
@@ -29,6 +29,21 @@ const DEMO_USER: User = {
 
 const DEV_DEMO_MODE =
   !ENV.isProduction && process.env.DEV_DEMO_MODE === "true";
+
+type DevAuthOverride = "guest" | "demoAdmin" | null;
+
+function getDevAuthOverride(req: CreateExpressContextOptions["req"]): DevAuthOverride {
+  if (ENV.isProduction) return null;
+
+  const requestUrl = new URL(req.originalUrl ?? req.url, "http://localhost");
+  const devAuth = requestUrl.searchParams.get("devAuth");
+
+  if (devAuth === "guest" || devAuth === "demoAdmin") {
+    return devAuth;
+  }
+
+  return null;
+}
 
 if (DEV_DEMO_MODE) {
   console.warn(
@@ -43,6 +58,23 @@ export async function createContext(
   opts: CreateExpressContextOptions
 ): Promise<TrpcContext> {
   let user: User | null = null;
+  const devAuthOverride = getDevAuthOverride(opts.req);
+
+  if (devAuthOverride === "guest") {
+    return {
+      req: opts.req,
+      res: opts.res,
+      user: null,
+    };
+  }
+
+  if (devAuthOverride === "demoAdmin") {
+    return {
+      req: opts.req,
+      res: opts.res,
+      user: DEMO_USER,
+    };
+  }
 
   try {
     user = await sdk.authenticateRequest(opts.req);

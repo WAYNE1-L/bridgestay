@@ -75,7 +75,7 @@ export function mapSupabaseToListing(supabaseListing: SupabaseListing): Bilingua
       email: contactInfo.email
     },
     isFeatured: supabaseListing.luxury_score > 80, // Auto-feature premium listings
-    status: 'available',
+    status: 'published',
     reviewStatus: 'approved', // Supabase listings are pre-approved
     sourceLink: supabaseListing.source_link, // Preserved for admin use (not shown to users)
     // Store luxury_score as a custom property for sorting/display

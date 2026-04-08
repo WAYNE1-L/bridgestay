@@ -9,6 +9,7 @@ import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { handleStripeWebhook } from "../stripe/webhook";
+import { ENV } from "./env";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -29,7 +30,26 @@ async function findAvailablePort(startPort: number = 3000): Promise<number> {
   throw new Error(`No available port found starting from ${startPort}`);
 }
 
+function getMissingProductionEnv() {
+  return [
+    !ENV.databaseUrl && "DATABASE_URL",
+    !ENV.cookieSecret && "JWT_SECRET",
+    !ENV.appId && "VITE_APP_ID",
+    !ENV.oAuthServerUrl && "OAUTH_SERVER_URL",
+    !ENV.ownerOpenId && "OWNER_OPEN_ID",
+  ].filter(Boolean);
+}
+
 async function startServer() {
+  if (ENV.isProduction) {
+    const missing = getMissingProductionEnv();
+    if (missing.length > 0) {
+      throw new Error(
+        `Missing required production env vars: ${missing.join(", ")}`
+      );
+    }
+  }
+
   const app = express();
   const server = createServer(app);
   
@@ -57,9 +77,11 @@ async function startServer() {
   }
 
   const preferredPort = parseInt(process.env.PORT || "3000");
-  const port = await findAvailablePort(preferredPort);
+  const port = ENV.isProduction
+    ? preferredPort
+    : await findAvailablePort(preferredPort);
 
-  if (port !== preferredPort) {
+  if (!ENV.isProduction && port !== preferredPort) {
     console.log(`Port ${preferredPort} is busy, using port ${port} instead`);
   }
 

@@ -1,12 +1,44 @@
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
-import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
+import { adminProcedure, publicProcedure, protectedProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 import { TRPCError } from "@trpc/server";
 import * as db from "./db";
 import { createMoveInCheckoutSession, createRentCheckoutSession, getCheckoutSession } from "./stripe/checkout";
 import { calculateMoveInCost } from "./stripe/products";
+
+const REPORT_WINDOW_MS = 15 * 60 * 1000;
+const reportThrottle = new Map<string, number>();
+
+function getClientIp(ctx: { req: { ip?: string; headers?: Record<string, unknown> } }) {
+  const forwarded = ctx.req.headers?.["x-forwarded-for"];
+  if (typeof forwarded === "string" && forwarded.trim()) {
+    return forwarded.split(",")[0]!.trim();
+  }
+  return ctx.req.ip?.trim() || "unknown";
+}
+
+function assertReportAllowed(clientIp: string, apartmentId: number) {
+  const now = Date.now();
+
+  reportThrottle.forEach((value, key) => {
+    if (now - value >= REPORT_WINDOW_MS) {
+      reportThrottle.delete(key);
+    }
+  });
+
+  const throttleKey = `${clientIp}:${apartmentId}`;
+  const lastReportAt = reportThrottle.get(throttleKey);
+  if (lastReportAt && now - lastReportAt < REPORT_WINDOW_MS) {
+    throw new TRPCError({
+      code: "TOO_MANY_REQUESTS",
+      message: "Report already submitted recently for this listing. Please wait before sending another one.",
+    });
+  }
+
+  reportThrottle.set(throttleKey, now);
+}
 
 // ============ VALIDATION SCHEMAS ============
 
@@ -79,7 +111,7 @@ const updateApartmentSchema = createApartmentSchema
     maxLeaseTerm: z.number().optional(),
     petsAllowed: z.boolean().optional(),
     parkingIncluded: z.boolean().optional(),
-    status: z.enum(["draft", "active", "pending", "rented", "inactive"]).optional(),
+    status: z.enum(["draft", "pending_review", "published", "rejected", "archived"]).optional(),
     featured: z.boolean().optional(),
   });
 
@@ -174,23 +206,50 @@ export const appRouter = router({
         return await db.getApartments(filters, limit, offset);
       }),
 
-    adminList: protectedProcedure
+    adminList: adminProcedure
       .input(z.object({
         limit: z.number().default(100),
         offset: z.number().default(0),
       }))
-      .query(async ({ ctx, input }) => {
-        if (ctx.user.role !== "admin") {
-          throw new TRPCError({ code: "FORBIDDEN", message: "Only admins can view all listings" });
-        }
+      .query(async ({ input }) => {
         return await db.getAllApartments(input.limit, input.offset);
+      }),
+
+    reportSummary: adminProcedure
+      .query(async () => {
+        return await db.getListingReportSummary();
+      }),
+
+    listReportsForListing: adminProcedure
+      .input(z.object({ apartmentId: z.number().int().positive() }))
+      .query(async ({ input }) => {
+        return await db.getListingReportsForApartment(input.apartmentId);
+      }),
+
+    markInactive: adminProcedure
+      .input(z.object({ id: z.number().int().positive() }))
+      .mutation(async ({ input }) => {
+        const apartment = await db.getApartmentById(input.id);
+        if (!apartment) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Apartment not found" });
+        }
+
+        await db.updateApartment(input.id, { status: "archived" });
+        return { success: true, status: "archived" as const };
       }),
 
     getById: publicProcedure
       .input(z.object({ id: z.number() }))
-      .query(async ({ input }) => {
+      .query(async ({ ctx, input }) => {
         const apartment = await db.getApartmentById(input.id);
         if (!apartment) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Apartment not found" });
+        }
+        if (
+          apartment.status !== "published" &&
+          ctx.user?.role !== "admin" &&
+          apartment.landlordId !== ctx.user?.id
+        ) {
           throw new TRPCError({ code: "NOT_FOUND", message: "Apartment not found" });
         }
         // Increment view count
@@ -206,8 +265,7 @@ export const appRouter = router({
           throw new TRPCError({ code: "FORBIDDEN", message: "Only landlords or admins can create listings" });
         }
         
-        // Admin users can publish directly as active
-        const status = ctx.user.role === "admin" ? "active" : "draft";
+        const status = "draft" as const;
         
         const id = await db.createApartment({
           ...input,
@@ -292,7 +350,7 @@ export const appRouter = router({
           throw new TRPCError({ code: "FORBIDDEN", message: "Not authorized" });
         }
         
-        await db.updateApartment(input.id, { status: "active" });
+        await db.updateApartment(input.id, { status: "published" });
         return { success: true };
       }),
 
@@ -355,6 +413,26 @@ export const appRouter = router({
         
         return { url, key: fileKey };
       }),
+
+    report: publicProcedure
+      .input(z.object({
+        apartmentId: z.number().int().positive(),
+        reason: z.enum(["unavailable", "wrong_details", "suspicious", "other"]),
+        notes: z.string().max(1000).optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        const apartment = await db.getApartmentById(input.apartmentId);
+        if (!apartment || apartment.status !== "published") {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Apartment not found" });
+        }
+        assertReportAllowed(getClientIp(ctx), input.apartmentId);
+        const id = await db.createListingReport({
+          apartmentId: input.apartmentId,
+          reason: input.reason,
+          notes: input.notes ?? null,
+        });
+        return { success: true, reportId: id };
+      }),
   }),
 
   // ============ APPLICATION ROUTES ============
@@ -365,6 +443,9 @@ export const appRouter = router({
         const apartment = await db.getApartmentById(input.apartmentId);
         if (!apartment) {
           throw new TRPCError({ code: "NOT_FOUND", message: "Apartment not found" });
+        }
+        if (apartment.status !== "published") {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "This listing is not accepting applications" });
         }
         
         const id = await db.createApplication({
@@ -529,6 +610,20 @@ export const appRouter = router({
     create: protectedProcedure
       .input(createDocumentSchema)
       .mutation(async ({ ctx, input }) => {
+        if (input.applicationId) {
+          const application = await db.getApplicationById(input.applicationId);
+          if (!application) {
+            throw new TRPCError({ code: "NOT_FOUND", message: "Application not found" });
+          }
+          if (
+            application.studentId !== ctx.user.id &&
+            application.landlordId !== ctx.user.id &&
+            ctx.user.role !== "admin"
+          ) {
+            throw new TRPCError({ code: "FORBIDDEN", message: "Not authorized to attach documents to this application" });
+          }
+        }
+
         const id = await db.createDocument({
           ...input,
           userId: ctx.user.id,
@@ -552,6 +647,20 @@ export const appRouter = router({
         expirationDate: z.string().optional(),
       }))
       .mutation(async ({ ctx, input }) => {
+        if (input.applicationId) {
+          const application = await db.getApplicationById(input.applicationId);
+          if (!application) {
+            throw new TRPCError({ code: "NOT_FOUND", message: "Application not found" });
+          }
+          if (
+            application.studentId !== ctx.user.id &&
+            application.landlordId !== ctx.user.id &&
+            ctx.user.role !== "admin"
+          ) {
+            throw new TRPCError({ code: "FORBIDDEN", message: "Not authorized to upload documents for this application" });
+          }
+        }
+
         const { storagePut } = await import("./storage");
         const { nanoid } = await import("nanoid");
         
@@ -615,6 +724,20 @@ export const appRouter = router({
         if (ctx.user.role !== "landlord" && ctx.user.role !== "admin") {
           throw new TRPCError({ code: "FORBIDDEN", message: "Not authorized" });
         }
+
+        const document = await db.getDocumentById(input.id);
+        if (!document) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Document not found" });
+        }
+        if (ctx.user.role !== "admin") {
+          if (!document.applicationId) {
+            throw new TRPCError({ code: "FORBIDDEN", message: "Only admins can verify standalone documents" });
+          }
+          const application = await db.getApplicationById(document.applicationId);
+          if (!application || application.landlordId !== ctx.user.id) {
+            throw new TRPCError({ code: "FORBIDDEN", message: "Not authorized" });
+          }
+        }
         
         await db.updateDocumentVerification(input.id, input.status, ctx.user.id, input.notes);
         return { success: true };
@@ -623,6 +746,13 @@ export const appRouter = router({
     delete: protectedProcedure
       .input(z.object({ id: z.number() }))
       .mutation(async ({ ctx, input }) => {
+        const document = await db.getDocumentById(input.id);
+        if (!document) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Document not found" });
+        }
+        if (document.userId !== ctx.user.id && ctx.user.role !== "admin") {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Not authorized" });
+        }
         // TODO: Also delete from S3
         await db.deleteDocument(input.id);
         return { success: true };
@@ -814,7 +944,7 @@ export const appRouter = router({
      * Uses Gemini 2.5 Flash and falls back to heuristics when structured
      * parsing is unavailable.
      */
-    extractFromWeChat: publicProcedure
+    extractFromWeChat: adminProcedure
       .input(
         z.object({
           text: z.string().optional(),
@@ -845,7 +975,7 @@ export const appRouter = router({
      * formula. Returns found:false when the address cannot be resolved so
      * the caller can still save without crashing.
      */
-    geocodeAddress: publicProcedure
+    geocodeAddress: adminProcedure
       .input(
         z.object({
           address: z.string().min(1),
@@ -886,6 +1016,73 @@ export const appRouter = router({
           displayName: geo.displayName,
           nearbyUniversities: nearby,
         };
+      }),
+  }),
+
+  // ============ AI SKILLS ============
+  ai: router({
+    /** List all available skill names */
+    listSkills: adminProcedure.query(async () => {
+      const { listSkills } = await import("./ai/skill-loader");
+      return await listSkills();
+    }),
+
+    /**
+     * Run an AI skill perspective analysis.
+     * Loads the named skill's SKILL.md, sends question + context to Gemini,
+     * and returns structured strengths/risks/recommendations.
+     */
+    runSkillPerspective: adminProcedure
+      .input(
+        z.object({
+          skillName: z
+            .string()
+            .min(1)
+            .max(100)
+            .regex(
+              /^[a-z0-9]+(?:-[a-z0-9]+)*$/,
+              "Skill name must be lowercase alphanumeric with hyphens"
+            ),
+          question: z.string().min(1).max(10000),
+          context: z.string().max(50000).optional(),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const { runSkillPerspective } = await import("./ai/skill-runner");
+        try {
+          return await runSkillPerspective(input);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : "Skill execution failed";
+          console.error("[router/runSkillPerspective]", message);
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message });
+        }
+      }),
+
+    /**
+     * Analyze an already-parsed listing using the listing-conversion-optimizer
+     * skill. Returns title suggestions, missing fields, risk flags, and tags.
+     * Intended to be called after extractFromWeChat on the review screen.
+     */
+    analyzeListingQuality: adminProcedure
+      .input(
+        z.object({
+          listingJson: z.string().min(1).max(50000),
+        })
+      )
+      .mutation(async ({ input }) => {
+        const { runSkillPerspective } = await import("./ai/skill-runner");
+        try {
+          return await runSkillPerspective({
+            skillName: "listing-conversion-optimizer",
+            question:
+              "请用简体中文分析这条已解析的租房信息，给出能提升国际学生咨询转化率的具体建议。summary、strengths、risks、recommendations、missingFields 请全部用中文输出；suggestedTitle 和 suggestedTags 保持适合编辑房源字段的简洁内容。",
+            context: input.listingJson,
+          });
+        } catch (err) {
+          const message = err instanceof Error ? err.message : "Listing analysis failed";
+          console.error("[router/analyzeListingQuality]", message);
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message });
+        }
       }),
   }),
 

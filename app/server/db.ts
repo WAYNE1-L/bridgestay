@@ -36,6 +36,8 @@ import {
   type InsertNotification,
   type Promotion,
   type InsertPromotion,
+  listingReports,
+  type InsertListingReport,
 } from "../drizzle/schema";
 import { ENV } from './_core/env';
 
@@ -229,7 +231,7 @@ export async function getApartments(filters: ApartmentFilters = {}, limit = 20, 
   const db = await getDb();
   if (!db) return [];
 
-  const conditions = [eq(apartments.status, "active")];
+  const conditions = [eq(apartments.status, "published")];
 
   if (filters.city) {
     conditions.push(like(apartments.city, `%${filters.city}%`));
@@ -246,6 +248,9 @@ export async function getApartments(filters: ApartmentFilters = {}, limit = 20, 
   if (filters.bedrooms) {
     conditions.push(eq(apartments.bedrooms, filters.bedrooms));
   }
+  if (filters.bathrooms) {
+    conditions.push(eq(apartments.bathrooms, filters.bathrooms.toString()));
+  }
   if (filters.propertyType) {
     conditions.push(eq(apartments.propertyType, filters.propertyType as any));
   }
@@ -256,6 +261,11 @@ export async function getApartments(filters: ApartmentFilters = {}, limit = 20, 
   }
   if (filters.parkingIncluded === true) {
     conditions.push(eq(apartments.parkingIncluded, true));
+  }
+  if (filters.nearUniversity?.trim()) {
+    conditions.push(
+      sql`LOWER(CAST(${apartments.nearbyUniversities} AS CHAR)) LIKE ${`%${filters.nearUniversity.trim().toLowerCase()}%`}`
+    );
   }
   if (filters.landlordId) {
     conditions.push(eq(apartments.landlordId, filters.landlordId));
@@ -328,6 +338,15 @@ export async function deleteApartment(id: number) {
   const db = await getDb();
   if (!db) return;
 
+  const relatedApplications = await db.select({ id: applications.id })
+    .from(applications)
+    .where(eq(applications.apartmentId, id));
+  const applicationIds = relatedApplications.map((application) => application.id);
+
+  if (applicationIds.length > 0) {
+    await db.delete(documents).where(inArray(documents.applicationId, applicationIds));
+  }
+  await db.delete(listingReports).where(eq(listingReports.apartmentId, id));
   await db.delete(savedApartments).where(eq(savedApartments.apartmentId, id));
   await db.delete(messages).where(eq(messages.apartmentId, id));
   await db.delete(payments).where(eq(payments.apartmentId, id));
@@ -436,6 +455,14 @@ export async function getApplicationDocuments(applicationId: number) {
     .from(documents)
     .where(eq(documents.applicationId, applicationId))
     .orderBy(desc(documents.createdAt));
+}
+
+export async function getDocumentById(id: number) {
+  const db = await getDb();
+  if (!db) return undefined;
+
+  const result = await db.select().from(documents).where(eq(documents.id, id)).limit(1);
+  return result.length > 0 ? result[0] : undefined;
 }
 
 export async function updateDocumentVerification(
@@ -704,7 +731,7 @@ export async function getLandlordStats(landlordId: number) {
     .from(apartments)
     .where(and(
       eq(apartments.landlordId, landlordId),
-      eq(apartments.status, "active")
+      eq(apartments.status, "published")
     ));
 
   const pendingApplications = await db.select({ count: sql<number>`count(*)` })
@@ -889,9 +916,76 @@ export async function expirePromotions() {
 export async function getUserPromotions(userId: number) {
   const db = await getDb();
   if (!db) return [];
-  
+
   return db.select()
     .from(promotions)
     .where(eq(promotions.userId, userId))
     .orderBy(desc(promotions.createdAt));
+}
+
+// ============ LISTING REPORT QUERIES ============
+
+export async function createListingReport(data: InsertListingReport): Promise<number | undefined> {
+  const db = await getDb();
+  if (!db) return undefined;
+  const result = await db.insert(listingReports).values(data);
+  return result[0].insertId;
+}
+
+export async function getListingReportSummary() {
+  const db = await getDb();
+  if (!db) return [];
+
+  const rows = await db.select({
+    apartmentId: listingReports.apartmentId,
+    title: apartments.title,
+    status: apartments.status,
+    totalCount: sql<number>`COUNT(*)`,
+    unavailableCount: sql<number>`SUM(CASE WHEN ${listingReports.reason} = 'unavailable' THEN 1 ELSE 0 END)`,
+    wrongDetailsCount: sql<number>`SUM(CASE WHEN ${listingReports.reason} = 'wrong_details' THEN 1 ELSE 0 END)`,
+    suspiciousCount: sql<number>`SUM(CASE WHEN ${listingReports.reason} = 'suspicious' THEN 1 ELSE 0 END)`,
+    otherCount: sql<number>`SUM(CASE WHEN ${listingReports.reason} = 'other' THEN 1 ELSE 0 END)`,
+    latestReportAt: sql<Date>`MAX(${listingReports.createdAt})`,
+    latestReportNotes: sql<string | null>`(
+      SELECT lr2.notes
+      FROM listing_reports lr2
+      WHERE lr2.apartmentId = ${listingReports.apartmentId}
+      ORDER BY lr2.createdAt DESC, lr2.id DESC
+      LIMIT 1
+    )`,
+  })
+    .from(listingReports)
+    .innerJoin(apartments, eq(listingReports.apartmentId, apartments.id))
+    .groupBy(listingReports.apartmentId, apartments.title, apartments.status)
+    .orderBy(desc(sql`COUNT(*)`), desc(sql`MAX(${listingReports.createdAt})`));
+
+  return rows.map((row) => ({
+    apartmentId: row.apartmentId,
+    title: row.title,
+    status: row.status,
+    totalCount: Number(row.totalCount) || 0,
+    byReason: {
+      unavailable: Number(row.unavailableCount) || 0,
+      wrong_details: Number(row.wrongDetailsCount) || 0,
+      suspicious: Number(row.suspiciousCount) || 0,
+      other: Number(row.otherCount) || 0,
+    },
+    latestReportAt: row.latestReportAt,
+    latestReportNotes: row.latestReportNotes,
+  }));
+}
+
+export async function getListingReportsForApartment(apartmentId: number) {
+  const db = await getDb();
+  if (!db) return [];
+
+  return db.select({
+    id: listingReports.id,
+    reason: listingReports.reason,
+    notes: listingReports.notes,
+    createdAt: listingReports.createdAt,
+  })
+    .from(listingReports)
+    .where(eq(listingReports.apartmentId, apartmentId))
+    .orderBy(desc(listingReports.createdAt), desc(listingReports.id));
 }

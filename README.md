@@ -31,10 +31,10 @@ The full-stack web application. Built with:
 - **Frontend:** React 19, TypeScript, Vite, Tailwind CSS, shadcn/ui, Wouter, tRPC client
 - **Backend:** Express, tRPC, Drizzle ORM, MySQL
 - **Auth:** Custom session-based auth with JWT (jose)
-- **Storage:** AWS S3 for image uploads
-- **Database:** Supabase (PostgreSQL) for live listings; MySQL for app data
+- **Storage:** Forge storage proxy for uploads
+- **Database:** MySQL via Drizzle ORM
 - **Payments:** Stripe (checkout + webhooks)
-- **AI:** OpenAI GPT-4o for listing extraction; Gemini for image generation
+- **AI:** Gemini / Forge-backed AI utilities
 
 ```
 app/
@@ -76,7 +76,7 @@ Market research and background reading:
 
 Python data pipeline tools for scraping and importing listings:
 
-- `bridge_stay_pipeline.py` — V5.0 Selenium scraper for Xiaohongshu (小红书). Reads `links.txt`, extracts listing data with GPT-4o, saves to Supabase.
+- `bridge_stay_pipeline.py` — V5.0 Selenium scraper for Xiaohongshu (小红书). Reads `links.txt`, extracts listing data, saves to Supabase.
 - `pipeline-v1.py` — V1.0 clean pipeline. Accepts raw text via stdin, extracts and saves to Supabase. No browser required.
 
 Both scripts require environment variables to be set. See `.env.example`.
@@ -111,8 +111,8 @@ Deprecated files, old exports, and reference snapshots. Not needed for developme
 
 - Node.js 20+
 - pnpm (`npm install -g pnpm`)
-- A Supabase project (free tier works)
-- Optional: MySQL database, Stripe account, AWS S3 bucket
+- MySQL database
+- Optional: Supabase project, Stripe account, Google Maps key
 
 ### Setup
 
@@ -127,8 +127,8 @@ pnpm install
 cp ../.env.example .env
 # Edit .env with your real keys
 
-# 4. Push database schema
-pnpm db:push
+# 4. Apply tracked database migrations
+pnpm db:migrate
 
 # 5. Start development server
 pnpm dev
@@ -164,17 +164,22 @@ Copy `.env.example` to `.env` and fill in your values:
 
 | Variable | Required | Description |
 |---|---|---|
-| `OPENAI_API_KEY` | Yes | OpenAI API key for GPT-4o listing extraction |
-| `SUPABASE_URL` | Yes | Supabase project URL |
-| `SUPABASE_ANON_KEY` | Yes | Supabase anonymous/public key |
-| `SUPABASE_SERVICE_ROLE_KEY` | Server only | Supabase service role key (never expose client-side) |
-| `STRIPE_SECRET_KEY` | Payments | Stripe secret key |
-| `STRIPE_WEBHOOK_SECRET` | Payments | Stripe webhook signing secret |
-| `AWS_ACCESS_KEY_ID` | Image upload | AWS credentials for S3 |
-| `AWS_SECRET_ACCESS_KEY` | Image upload | AWS credentials for S3 |
-| `AWS_REGION` | Image upload | S3 bucket region |
-| `AWS_S3_BUCKET` | Image upload | S3 bucket name |
-| `PORT` | Optional | Dev server port (default: 3000) |
+| `DATABASE_URL` | Yes | MySQL connection string used by Drizzle |
+| `JWT_SECRET` | Yes | Session signing secret |
+| `OAUTH_SERVER_URL` | Yes | OAuth backend base URL |
+| `OWNER_OPEN_ID` | Yes | Admin account OpenID bootstrap |
+| `VITE_APP_ID` | Yes | OAuth app identifier |
+| `VITE_OAUTH_PORTAL_URL` | Recommended | Login portal base URL for the frontend |
+| `VITE_SUPABASE_URL` | Optional | Enables Supabase-backed legacy listings |
+| `VITE_SUPABASE_ANON_KEY` | Optional | Public Supabase anon key |
+| `GEMINI_API_KEY` | Optional | Direct Gemini key for AI flows |
+| `BUILT_IN_FORGE_API_URL` | Optional | Forge proxy base URL |
+| `BUILT_IN_FORGE_API_KEY` | Optional | Forge proxy auth key |
+| `STRIPE_SECRET_KEY` | Optional | Stripe secret key |
+| `STRIPE_WEBHOOK_SECRET` | Optional | Stripe webhook signing secret |
+| `VITE_GOOGLE_MAPS_API_KEY` | Optional | Google Maps JS API key |
+| `PORT` | Optional | Server port (default: 3000) |
+| `DEV_DEMO_MODE` | Local only | Auth bypass for local import testing; never enable in production |
 
 ---
 
@@ -202,13 +207,28 @@ Copy `.env.example` to `.env` and fill in your values:
 |---|---|
 | Frontend | React 19, TypeScript, Vite, Tailwind CSS v4, shadcn/ui |
 | Backend | Express, tRPC v11, Node.js |
-| Database | Drizzle ORM + MySQL, Supabase (PostgreSQL) |
+| Database | Drizzle ORM + MySQL |
 | Auth | Custom JWT session auth (jose) |
-| Storage | AWS S3 |
+| Storage | Forge storage proxy |
 | Payments | Stripe |
-| AI | OpenAI GPT-4o, Google Gemini |
-| Scraper | Python, Selenium, OpenAI GPT-4o |
-| Deploy | — (not yet configured) |
+| AI | Google Gemini, Forge-backed helpers |
+| Scraper | Python, Selenium |
+| Deploy | Bring-your-own Node host + MySQL |
+
+## Production Notes
+
+Use these commands for a real deploy from the `app/` directory:
+
+```bash
+pnpm install --frozen-lockfile
+pnpm db:migrate
+pnpm build
+pnpm start
+```
+
+Production startup now fails fast if these env vars are missing: `DATABASE_URL`, `JWT_SECRET`, `OAUTH_SERVER_URL`, `OWNER_OPEN_ID`, `VITE_APP_ID`.
+
+Do not enable `DEV_DEMO_MODE` outside local development.
 
 ---
 

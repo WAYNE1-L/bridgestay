@@ -1,11 +1,18 @@
 import { createClient } from '@supabase/supabase-js';
 
-// Supabase configuration (MVP demo - direct credentials)
-const SUPABASE_URL = 'https://ycqsetfjypgkwbhvyslc.supabase.co';
-const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InljcXNldGZqeXBna3diaHZ5c2xjIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjgwNTEzOTAsImV4cCI6MjA4MzYyNzM5MH0.LCUQotOZgIDyEKFJzZCnl2rCxElFtsLfYOX659OnCHQ';
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+const hasSupabaseConfig = Boolean(SUPABASE_URL && SUPABASE_ANON_KEY);
 
-// Create Supabase client
-export const supabase = createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+if (!hasSupabaseConfig) {
+  console.warn(
+    "[Supabase] VITE_SUPABASE_URL / VITE_SUPABASE_ANON_KEY missing; Supabase-backed listings are disabled."
+  );
+}
+
+export const supabase = hasSupabaseConfig
+  ? createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+  : null;
 
 // Supabase listing schema type
 export interface SupabaseListing {
@@ -34,6 +41,8 @@ export interface SupabaseListing {
 
 // Fetch all listings from Supabase, sorted by luxury_score descending
 export async function fetchSupabaseListings(): Promise<SupabaseListing[]> {
+  if (!supabase) return [];
+
   try {
     const { data, error } = await supabase
       .from('listings')
@@ -59,6 +68,8 @@ export async function fetchSupabaseListings(): Promise<SupabaseListing[]> {
 
 // Delete a listing from Supabase by ID
 export async function deleteSupabaseListing(id: string): Promise<boolean> {
+  if (!supabase) return false;
+
   try {
     const { error } = await supabase
       .from('listings')

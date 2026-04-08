@@ -1,6 +1,5 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
-import { getLoginUrl } from "@/const";
 import { motion, AnimatePresence } from "framer-motion";
 import { Menu, X, Home, Search, FileText, User, LogOut, Globe, Settings } from "lucide-react";
 import { useState, useEffect } from "react";
@@ -20,12 +19,12 @@ export function Navbar() {
 
   // Simplified navigation for single admin mode
   const navLinks = isAdmin ? [
-    { href: "/", label: language === "cn" ? "首页" : "Home", icon: Home },
-    { href: "/apartments", label: language === "cn" ? "房源列表" : "Listings", icon: Search },
-    { href: "/import-listing", label: language === "cn" ? "AI 房源导入" : "AI Import", icon: FileText },
+    { href: "/", label: t("nav.home"), icon: Home },
+    { href: "/apartments", label: t("nav.listings"), icon: Search },
+    { href: "/admin/import", label: t("nav.aiImport"), icon: FileText },
   ] : [
-    { href: "/", label: language === "cn" ? "首页" : "Home", icon: Home },
-    { href: "/apartments", label: language === "cn" ? "房源列表" : "Listings", icon: Search },
+    { href: "/", label: t("nav.home"), icon: Home },
+    { href: "/apartments", label: t("nav.listings"), icon: Search },
   ];
 
   useEffect(() => {
@@ -109,17 +108,10 @@ export function Navbar() {
                 <Link href="/admin">
                   <Button variant="ghost" className="h-11 px-4 rounded-full text-[15px] font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100">
                     <Settings className="w-4 h-4 mr-1.5" />
-                    {language === "cn" ? "管理" : "Admin"}
+                    {t("nav.admin")}
                   </Button>
                 </Link>
               </div>
-            ) : !isAuthenticated ? (
-              /* Admin-only login */
-              <a href={getLoginUrl()}>
-                <Button variant="ghost" className="h-11 px-5 rounded-full text-[15px] font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100">
-                  {language === "cn" ? "管理员登录" : "Admin Login"}
-                </Button>
-              </a>
             ) : null}
           </div>
 
@@ -205,7 +197,7 @@ export function Navbar() {
               >
                 <span className="flex items-center gap-4">
                   <Globe className="w-5 h-5" />
-                  {language === "cn" ? "切换语言" : "Language"}
+                  {t("nav.language")}
                 </span>
                 <span className="px-3 py-1 rounded-full bg-gray-100 text-sm font-semibold">
                   {language === "cn" ? "EN" : "中文"}
@@ -221,7 +213,7 @@ export function Navbar() {
                       whileTap={{ scale: 0.98 }}
                     >
                       <User className="w-5 h-5" />
-                      {language === "cn" ? "控制台" : "Dashboard"}
+                      {t("nav.dashboard")}
                     </motion.div>
                   </Link>
                   <motion.div
@@ -233,17 +225,10 @@ export function Navbar() {
                     whileTap={{ scale: 0.98 }}
                   >
                     <LogOut className="w-5 h-5" />
-                    {language === "cn" ? "退出登录" : "Sign Out"}
+                    {t("nav.signOut")}
                   </motion.div>
                 </>
-              ) : (
-                /* Admin-only login for mobile */
-                <a href={getLoginUrl()}>
-                  <Button className="w-full mt-3 h-12 rounded-full text-[15px] font-medium btn-warm text-white">
-                    {language === "cn" ? "管理员登录" : "Admin Login"}
-                  </Button>
-                </a>
-              )}
+              ) : null}
             </div>
           </motion.div>
         )}

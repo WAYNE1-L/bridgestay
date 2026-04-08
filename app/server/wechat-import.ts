@@ -1,6 +1,45 @@
 import { invokeLLM } from "./_core/llm";
 import { ENV } from "./_core/env";
 
+export type ImportIssueCode =
+  | "gemini_unavailable"
+  | "gemini_invalid_json"
+  | "gemini_truncated"
+  | "schema_mismatch"
+  | "duplicate_content_removed"
+  | "multiple_listing_candidates"
+  | "conflicting_addresses"
+  | "best_candidate_selected"
+  | "property_name_only";
+
+export type ImportDiagnostic = {
+  code: ImportIssueCode;
+  severity: "info" | "warning";
+  message: string;
+};
+
+export type ExtractedLocationCandidate = {
+  rawAddressText?: string;
+  rawPropertyName?: string;
+  city?: string;
+  state?: string;
+  zipCode?: string;
+  evidenceType:
+    | "street_address"
+    | "property_name"
+    | "city_state_only"
+    | "conflicting"
+    | "missing";
+  confidence: "high" | "medium" | "low";
+  issues: Array<
+    | "multiple_candidates"
+    | "conflicting_addresses"
+    | "missing_city_or_state"
+    | "property_name_only"
+    | "address_incomplete"
+  >;
+};
+
 // ── Extracted listing shape ────────────────────────────────────────────────
 export type ExtractedListing = {
   title: string;
@@ -31,8 +70,22 @@ export type ExtractedListing = {
   confidence: "high" | "medium" | "low";
   extractionSource?: "gemini" | "heuristic-fallback";
   extractionWarning?: string;
+  extractionWarnings?: string[];
   locationSource?: "direct_text" | "place_lookup" | "unresolved";
   locationConfidence?: "high" | "medium" | "low";
+  duplicateContentRemoved?: boolean;
+  multipleListingCandidatesDetected?: boolean;
+  conflictingAddressesDetected?: boolean;
+  extractedFromBestCandidateChunk?: boolean;
+  candidateChunkCount?: number;
+  truncatedPreviewOfOtherChunks?: string[];
+  otherCandidateChunks?: string[];
+};
+
+export type ExtractListingResponse = ExtractedListing & {
+  listing: ExtractedListing;
+  locationCandidate: ExtractedLocationCandidate;
+  diagnostics: ImportDiagnostic[];
 };
 
 // ── JSON schema for structured LLM output ─────────────────────────────────
@@ -165,7 +218,20 @@ For prices shown as $1,800 or ¥1800 or 1800美金, extract the numeric USD valu
 For dates, output ISO-8601 format (YYYY-MM-DD). If only a month/year is given, use the 1st of that month.
 For US state, infer from city if not explicitly stated (e.g. Los Angeles → CA, New York → NY).
 If the text mentions only a property/building name and not a street address, put the building name in propertyName and omit address. Never invent or guess a street address.
-If a field cannot be determined, omit it entirely (do not guess).`;
+If a field cannot be determined, omit it entirely (do not guess).
+
+MULTI-LISTING INPUT:
+The input may contain multiple distinct rental listings pasted together. If so:
+• Extract data from only the single most complete listing (the one with the clearest rent, address, and bedroom details).
+• Set confidence to "medium" or "low" to indicate the ambiguity.
+• Do NOT merge data from different listings into one result.
+
+ADDRESS HANDLING:
+• Lines with "Address:", "地址:", or "📍地址:" contain verified street addresses — highest priority.
+• Full US street addresses (number + street + city, state, zip) are second priority.
+• Street-like fragments without city/state are lower priority.
+• Property/building names (e.g. "Lattice Apartment") go in propertyName, NOT in address.
+• Never substitute a property name for a street address.`;
 
 // ── City/state lookup table for heuristic extraction ──────────────────────
 const CITY_PATTERNS: Array<[RegExp, string, string]> = [
@@ -317,13 +383,28 @@ function heuristicExtraction(params: {
     ? parseInt(depositMatch[1].replace(/,/g, ""), 10) || undefined
     : undefined;
 
-  const addressMatch = raw.match(
-    /(?:^|\n)\s*address[：:\s]+([^\n,]+(?:\b(?:street|st|avenue|ave|road|rd|boulevard|blvd|drive|dr|lane|ln|court|ct|way|parkway|pkwy|place|pl|terrace|ter|circle|cir)\b[^\n,]*)?)/i
+  // ── Address (tiered priority) ─────────────────────────────────────────
+  // Tier 1: Explicit label — Address: / 地址: / 📍地址:
+  const tier1Match = raw.match(
+    /(?:address|地址|addr)\s*[:：]\s*([^\n]+)/i
   );
-  const address = addressMatch?.[1]?.trim();
+  const tier1 = tier1Match?.[1]?.trim();
+  // Tier 2: Full US address — number + street, city, STATE zip
+  const tier2Match = raw.match(
+    /(\d{1,6}\s+[^,\n]{3,40},\s*[A-Za-z\s]{2,30},\s*[A-Z]{2}\s+\d{5})/
+  );
+  const tier2 = tier2Match?.[1]?.trim();
+  // Tier 3: Street-like fragment (number + street suffix word)
+  const tier3Match = raw.match(
+    /(\d{1,6}\s+[A-Za-z0-9\s.]+\b(?:street|st|avenue|ave|road|rd|boulevard|blvd|drive|dr|lane|ln|court|ct|way|pkwy|place|pl|terrace|ter|circle|cir)\b[^\n,]*)/i
+  );
+  const tier3 = tier3Match?.[1]?.trim();
+  const address = (tier1 && tier1.length >= 5 ? tier1 : undefined)
+    ?? tier2
+    ?? tier3;
 
   const propertyNameMatch = raw.match(
-    /([A-Z][A-Za-z0-9&.'\- ]{2,80}(?:Apartment Homes|Apartments|Residences|Residence|Homes|Commons|Village|Lofts|Tower|Towers))/m
+    /([A-Z][A-Za-z0-9&.'\- ]{2,80}(?:Apartment Homes|Apartments|Residences|Residence|Homes|Commons|Village|Lofts|Tower|Towers|Townhomes?))/m
   );
   const propertyName = propertyNameMatch?.[1]?.trim();
 
@@ -380,78 +461,132 @@ function mergeWarnings(...messages: Array<string | undefined>): string | undefin
   return unique.length ? unique.join(" | ") : undefined;
 }
 
-async function normalizeListingLocation(listing: ExtractedListing): Promise<ExtractedListing> {
-  const propertyName = listing.propertyName?.trim() || (!looksLikeStreetAddress(listing.address) ? listing.address?.trim() : undefined);
-  const hasDirectStreetAddress = looksLikeStreetAddress(listing.address);
+function toDiagnostic(
+  code: ImportIssueCode,
+  severity: "info" | "warning",
+  message: string
+): ImportDiagnostic {
+  return { code, severity, message };
+}
 
-  if (hasDirectStreetAddress) {
+function diagnosticsToWarnings(diagnostics: ImportDiagnostic[]): {
+  extractionWarning?: string;
+  extractionWarnings?: string[];
+} {
+  const messages = diagnostics.map((diagnostic) => diagnostic.message);
+  return {
+    extractionWarning: mergeWarnings(...messages),
+    extractionWarnings: messages.length ? messages : undefined,
+  };
+}
+
+export function deriveLocationCandidate(listing: ExtractedListing): ExtractedLocationCandidate {
+  const rawAddressText = looksLikeStreetAddress(listing.address)
+    ? listing.address?.trim()
+    : undefined;
+  const rawPropertyName = listing.propertyName?.trim()
+    || (!rawAddressText && listing.address && !looksLikeStreetAddress(listing.address)
+      ? listing.address.trim()
+      : undefined);
+
+  const issues: ExtractedLocationCandidate["issues"] = [];
+  if (listing.multipleListingCandidatesDetected) issues.push("multiple_candidates");
+  if (listing.conflictingAddressesDetected) issues.push("conflicting_addresses");
+
+  let evidenceType: ExtractedLocationCandidate["evidenceType"] = "missing";
+  let confidence: ExtractedLocationCandidate["confidence"] = "low";
+
+  if (listing.conflictingAddressesDetected) {
+    evidenceType = "conflicting";
+  } else if (rawAddressText) {
+    evidenceType = "street_address";
+    if (!listing.city || !listing.state) issues.push("address_incomplete");
+    confidence = listing.city && listing.state ? "high" : "medium";
+  } else if (rawPropertyName) {
+    evidenceType = "property_name";
+    issues.push("property_name_only");
+    if (!listing.city || !listing.state) issues.push("missing_city_or_state");
+    confidence = listing.city && listing.state ? "medium" : "low";
+  } else if (listing.city || listing.state) {
+    evidenceType = "city_state_only";
+    issues.push("address_incomplete");
+    if (!listing.city || !listing.state) issues.push("missing_city_or_state");
+    confidence = listing.city && listing.state ? "medium" : "low";
+  }
+
+  return {
+    rawAddressText,
+    rawPropertyName,
+    city: listing.city,
+    state: listing.state,
+    zipCode: listing.zipCode,
+    evidenceType,
+    confidence,
+    issues,
+  };
+}
+
+function diagnosticsFromPreprocess(preprocess: PreprocessResult | null): ImportDiagnostic[] {
+  if (!preprocess) return [];
+
+  const diagnostics: ImportDiagnostic[] = [];
+  if (preprocess.duplicateContentRemoved) {
+    diagnostics.push(
+      toDiagnostic(
+        "duplicate_content_removed",
+        "info",
+        "Duplicate repeated content was removed before extraction"
+      )
+    );
+  }
+  if (preprocess.multipleListingCandidatesDetected) {
+    diagnostics.push(
+      toDiagnostic(
+        "multiple_listing_candidates",
+        "warning",
+        `Input appears to contain ~${preprocess.listingCount} listings; extraction covers the strongest candidate`
+      )
+    );
+  }
+  if (preprocess.conflictingAddressesDetected) {
+    diagnostics.push(
+      toDiagnostic(
+        "conflicting_addresses",
+        "warning",
+        "Conflicting addresses were detected across candidate listings"
+      )
+    );
+  }
+  if (preprocess.extractedFromBestCandidateChunk) {
+    diagnostics.push(
+      toDiagnostic(
+        "best_candidate_selected",
+        "info",
+        "Extraction used the strongest candidate chunk from multi-listing input"
+      )
+    );
+  }
+  return diagnostics;
+}
+
+function applyLegacyLocationFields(
+  listing: ExtractedListing,
+  locationCandidate: ExtractedLocationCandidate
+): ExtractedListing {
+  const propertyName = listing.propertyName?.trim()
+    || (!looksLikeStreetAddress(listing.address) ? listing.address?.trim() : undefined);
+
+  if (locationCandidate.evidenceType === "street_address") {
     return {
       ...listing,
       propertyName,
+      address: locationCandidate.rawAddressText,
       locationSource: "direct_text",
-      locationConfidence: listing.city && listing.state ? "high" : "medium",
+      locationConfidence: locationCandidate.confidence,
     };
   }
 
-  if (!propertyName || !listing.city || !listing.state) {
-    return {
-      ...listing,
-      propertyName,
-      address: hasDirectStreetAddress ? listing.address : undefined,
-      locationSource: propertyName ? "unresolved" : undefined,
-      locationConfidence: propertyName ? "low" : undefined,
-      extractionWarning: propertyName
-        ? mergeWarnings(
-            listing.extractionWarning,
-            "Property name found but street address is unresolved; review required"
-          )
-        : listing.extractionWarning,
-    };
-  }
-
-  try {
-    const { lookupPropertyLocation } = await import("./geocoding");
-    const match = await lookupPropertyLocation({
-      propertyName,
-      city: listing.city,
-      state: listing.state,
-    });
-
-    if (!match) {
-      return {
-        ...listing,
-        propertyName,
-        address: undefined,
-        latitude: undefined,
-        longitude: undefined,
-        locationSource: "unresolved",
-        locationConfidence: "low",
-        extractionWarning: mergeWarnings(
-          listing.extractionWarning,
-          "Property name found but street address could not be verified; review required"
-        ),
-      };
-    }
-
-    return {
-      ...listing,
-      propertyName,
-      address: match.address,
-      city: match.city ?? listing.city,
-      state: match.state ?? listing.state,
-      zipCode: match.zipCode ?? listing.zipCode,
-      latitude: match.latitude,
-      longitude: match.longitude,
-      locationSource: "place_lookup",
-      locationConfidence: match.confidence,
-      extractionWarning: mergeWarnings(
-        listing.extractionWarning,
-        "Location matched from Google Places; review the normalized address before saving"
-      ),
-    };
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    console.warn("[WeChat Import] Location normalization skipped:", message);
+  if (locationCandidate.evidenceType === "property_name") {
     return {
       ...listing,
       propertyName,
@@ -459,13 +594,23 @@ async function normalizeListingLocation(listing: ExtractedListing): Promise<Extr
       latitude: undefined,
       longitude: undefined,
       locationSource: "unresolved",
-      locationConfidence: "low",
-      extractionWarning: mergeWarnings(
-        listing.extractionWarning,
-        "Property name found but Google Places lookup was unavailable; review required"
-      ),
+      locationConfidence: locationCandidate.confidence,
     };
   }
+
+  if (locationCandidate.evidenceType === "conflicting") {
+    return {
+      ...listing,
+      propertyName,
+      locationSource: "unresolved",
+      locationConfidence: "low",
+    };
+  }
+
+  return {
+    ...listing,
+    propertyName,
+  };
 }
 
 function stripMarkdownFences(raw: string): string {
@@ -612,16 +757,345 @@ function parseGeminiListingResponse(params: {
   return { parseIssue: lastIssue };
 }
 
+// ── Input preprocessing ──────────────────────────────────────────────────
+
+interface PreprocessResult {
+  /** Cleaned, deduplicated text */
+  text: string;
+  /** Estimated number of distinct listings in the input */
+  listingCount: number;
+  /** Warnings to surface to the user */
+  warnings: string[];
+  duplicateContentRemoved: boolean;
+  multipleListingCandidatesDetected: boolean;
+  conflictingAddressesDetected: boolean;
+  extractedFromBestCandidateChunk: boolean;
+  candidateChunkCount: number;
+  truncatedPreviewOfOtherChunks?: string[];
+  otherCandidateChunks?: string[];
+}
+
+/**
+ * Lightweight preprocessing for noisy WeChat pasted text.
+ * Normalizes punctuation, removes duplicate content blocks, and estimates
+ * how many distinct listings are present so extraction can flag ambiguity.
+ * For clean single-listing input this is effectively a no-op.
+ */
+export function preprocessInput(raw: string): PreprocessResult {
+  const warnings: string[] = [];
+  let duplicateContentRemoved = false;
+  let conflictingAddressesDetected = false;
+  let extractedFromBestCandidateChunk = false;
+  let truncatedPreviewOfOtherChunks: string[] | undefined;
+  let otherCandidateChunks: string[] | undefined;
+
+  // ── Normalize full-width punctuation → ASCII equivalents ──────────────
+  let text = raw
+    .replace(/：/g, ":").replace(/（/g, "(").replace(/）/g, ")")
+    .replace(/，/g, ",").replace(/；/g, ";").replace(/＝/g, "=")
+    .replace(/[^\S\n]+/g, " ")       // collapse horizontal whitespace
+    .replace(/\n{3,}/g, "\n\n")      // max 2 consecutive newlines
+    .trim();
+
+  // ── Insert linebreaks before listing headers glued without whitespace ─
+  // Handles: "84111🏠 暑期转租" → "84111\n🏠 暑期转租"
+  text = text.replace(/([^\n])(?=【[^】]+】)/g, "$1\n");
+  // Emoji are multi-byte; use a simple string scan instead of a Unicode regex
+  for (const emoji of ["🏠", "🏙", "🏢", "🏡", "🔑", "🏘"]) {
+    text = text.split(emoji).reduce((acc, part, i) => {
+      if (i === 0) return part;
+      // Insert newline before emoji if not already preceded by newline/whitespace
+      const prev = acc.slice(-1);
+      return acc + (prev && prev !== "\n" && prev !== " " ? "\n" : "") + emoji + part;
+    }, "");
+  }
+
+  // ── Deduplicate content blocks split at listing boundaries ────────────
+  const chunks = splitAtBoundaries(text);
+  let dedupedChunks = chunks;
+  if (chunks.length > 1) {
+    const seen = new Map<string, number>();
+    const kept: string[] = [];
+    let removedCount = 0;
+
+    for (let i = 0; i < chunks.length; i++) {
+      const fp = chunks[i]
+        .split("\n")
+        .filter(line => line.trim().length >= 5) // drop orphaned emoji lines
+        .join("\n")
+        .toLowerCase()
+        .replace(/[\s\-.,;:!?'"()【】\[\]{}\/\\@#$%^&*_+=|<>~`]/g, "")
+        .slice(0, 200);
+      if (fp.length < 30 || !seen.has(fp)) {
+        if (fp.length >= 30) seen.set(fp, i);
+        kept.push(chunks[i]);
+      } else {
+        removedCount++;
+      }
+    }
+
+    if (removedCount > 0) {
+      dedupedChunks = kept;
+      text = kept.join("\n");
+      duplicateContentRemoved = true;
+      warnings.push(`${removedCount} duplicate block(s) removed`);
+    }
+  }
+
+  const explicitAddresses = extractExplicitAddresses(text);
+  conflictingAddressesDetected = explicitAddresses.size > 1;
+  if (conflictingAddressesDetected) {
+    warnings.push("Conflicting addresses detected across candidate listings");
+  }
+
+  // ── Estimate listing count ────────────────────────────────────────────
+  const listingCount = estimateListingCount(text);
+  const multipleListingCandidatesDetected = listingCount > 1;
+  const candidateChunkCount = dedupedChunks.length;
+  if (multipleListingCandidatesDetected && dedupedChunks.length > 1) {
+    const bestChunk = pickBestCandidateChunk(dedupedChunks);
+    if (bestChunk && bestChunk.trim() && bestChunk.trim() !== text.trim()) {
+      const otherChunks = dedupedChunks
+        .filter(chunk => chunk.trim() !== bestChunk.trim())
+        .map(chunk => chunk.trim())
+        .filter(Boolean)
+        .slice(0, 2);
+      otherCandidateChunks = otherChunks;
+      truncatedPreviewOfOtherChunks = otherChunks
+        .map(makeChunkPreview)
+        .filter(Boolean);
+      text = bestChunk.trim();
+      extractedFromBestCandidateChunk = true;
+    }
+  }
+  if (listingCount > 1) {
+    warnings.push(
+      `Input appears to contain ~${listingCount} distinct listings; extraction covers the most complete one`,
+    );
+  }
+
+  return {
+    text,
+    listingCount,
+    warnings,
+    duplicateContentRemoved,
+    multipleListingCandidatesDetected,
+    conflictingAddressesDetected,
+    extractedFromBestCandidateChunk,
+    candidateChunkCount,
+    truncatedPreviewOfOtherChunks,
+    otherCandidateChunks,
+  };
+}
+
+/** Split text into chunks at lines that look like listing headers. */
+function splitAtBoundaries(text: string): string[] {
+  const lines = text.split("\n");
+  const chunks: string[] = [];
+  let buf: string[] = [];
+
+  for (const line of lines) {
+    if (isLikelyListingHeader(line) && buf.length > 0 && buf.join("\n").length > 50) {
+      chunks.push(buf.join("\n"));
+      buf = [];
+    }
+    buf.push(line);
+  }
+  if (buf.length > 0) chunks.push(buf.join("\n"));
+  return chunks;
+}
+
+/** Heuristic: does this line look like the beginning of a new listing? */
+function isLikelyListingHeader(line: string): boolean {
+  const t = line.trim();
+  if (!t || t.length < 5) return false;
+  // 【暑假短租】... bracket headers
+  if (/^【[^】]+】/.test(t)) return true;
+  // 🏠 + sublease / room-config keywords
+  if (/^[🏠🏙🏢🏡🔑🏘]/.test(t) &&
+      /转租|sublease|短租|出租|\d+[bB]\d+[bB]|studio/i.test(t)) return true;
+  // PropertyName + 转租 / room config
+  if (/^[A-Z][A-Za-z\s&'.]{2,30}\s*(?:转租|apartment|townhome|\d+[bB])/i.test(t)) return true;
+  // 转租 + PropertyName
+  if (/^转租\s*[A-Z]/i.test(t)) return true;
+  return false;
+}
+
+function extractExplicitAddresses(text: string): Set<string> {
+  const addresses = new Set<string>();
+  const addrRe = /(?:address|地址|addr)\s*[:：]\s*([^\n]+)/gi;
+  let match: RegExpExecArray | null;
+  while ((match = addrRe.exec(text)) !== null) {
+    const value = match[1]?.trim().toLowerCase();
+    if (value) addresses.add(value);
+  }
+  return addresses;
+}
+
+function pickBestCandidateChunk(chunks: string[]): string {
+  return [...chunks]
+    .map((chunk, index) => ({ chunk, index, score: scoreListingChunk(chunk) }))
+    .sort((a, b) => b.score - a.score || a.index - b.index)[0]?.chunk ?? chunks[0] ?? "";
+}
+
+function scoreListingChunk(chunk: string): number {
+  let score = 0;
+  if (/(?:address|地址|addr)\s*[:：]\s*[^\n]+/i.test(chunk)) score += 5;
+  if (/\d{1,6}\s+[A-Za-z0-9\s.]+\b(?:street|st|avenue|ave|road|rd|boulevard|blvd|drive|dr|lane|ln|court|ct|way|parkway|pkwy|place|pl|terrace|ter|circle|cir)\b/i.test(chunk)) score += 3;
+  if (/\$\s*[\d,]+|[\d,]{3,}\s*\/?\s*month|月租|月付/i.test(chunk)) score += 3;
+  if (/\d\s*(?:br|bd|bed(?:room)?s?)\b|\d\s*(?:卧室?|室|房间)|\d[Bb]\d[Bb]/i.test(chunk)) score += 2;
+  if (/\b[A-Z]{2}\b\s+\d{5}\b/.test(chunk)) score += 1;
+  score += Math.min(chunk.length / 200, 2);
+  return score;
+}
+
+function makeChunkPreview(chunk: string): string {
+  const normalized = chunk.replace(/\s+/g, " ").trim();
+  if (!normalized) return "";
+  return normalized.length <= 120 ? normalized : `${normalized.slice(0, 117).trimEnd()}...`;
+}
+
+function applyPreprocessSignals(
+  listing: ExtractedListing,
+  preprocess: Pick<
+    PreprocessResult,
+    | "warnings"
+    | "duplicateContentRemoved"
+    | "multipleListingCandidatesDetected"
+    | "conflictingAddressesDetected"
+    | "extractedFromBestCandidateChunk"
+    | "candidateChunkCount"
+    | "truncatedPreviewOfOtherChunks"
+    | "otherCandidateChunks"
+  >
+): ExtractedListing {
+  return {
+    ...listing,
+    extractionWarning: mergeWarnings(listing.extractionWarning, ...preprocess.warnings),
+    extractionWarnings: preprocess.warnings.length > 0 ? preprocess.warnings : listing.extractionWarnings,
+    duplicateContentRemoved: preprocess.duplicateContentRemoved,
+    multipleListingCandidatesDetected: preprocess.multipleListingCandidatesDetected,
+    conflictingAddressesDetected: preprocess.conflictingAddressesDetected,
+    extractedFromBestCandidateChunk: preprocess.extractedFromBestCandidateChunk,
+    candidateChunkCount: preprocess.candidateChunkCount,
+    truncatedPreviewOfOtherChunks: preprocess.truncatedPreviewOfOtherChunks,
+    otherCandidateChunks: preprocess.otherCandidateChunks,
+  };
+}
+
+export function finalizeExtractionResponse(
+  listing: ExtractedListing,
+  preprocessSignals: PreprocessResult | null,
+  extraDiagnostics: ImportDiagnostic[] = []
+): ExtractListingResponse {
+  const withPreprocess = preprocessSignals
+    ? applyPreprocessSignals(listing, preprocessSignals)
+    : listing;
+  const locationCandidate = deriveLocationCandidate(withPreprocess);
+
+  const diagnostics = [
+    ...diagnosticsFromPreprocess(preprocessSignals),
+    ...extraDiagnostics,
+  ];
+
+  if (
+    locationCandidate.evidenceType === "property_name"
+    && !diagnostics.some((diagnostic) => diagnostic.code === "property_name_only")
+  ) {
+    diagnostics.push(
+      toDiagnostic(
+        "property_name_only",
+        "warning",
+        "Property name found but no verified street address was extracted"
+      )
+    );
+  }
+
+  const compatibleListing = {
+    ...applyLegacyLocationFields(withPreprocess, locationCandidate),
+    ...diagnosticsToWarnings(diagnostics),
+  };
+
+  return {
+    ...compatibleListing,
+    listing: compatibleListing,
+    locationCandidate,
+    diagnostics,
+  };
+}
+
+/**
+ * Count distinct-listing signals in the (already deduplicated) text.
+ * Uses multiple weak signals (rent amounts, property names, address lines,
+ * listing headers) and requires ≥3 combined signal points to flag multi-listing.
+ */
+function estimateListingCount(text: string): number {
+  let signals = 0;
+
+  // Multiple distinct rent amounts
+  const rents = new Set<number>();
+  const rentRe = /\$\s*([\d,]+)/g;
+  let rm: RegExpExecArray | null;
+  while ((rm = rentRe.exec(text)) !== null) {
+    const v = parseInt(rm[1].replace(/,/g, ""), 10);
+    if (v >= 200 && v <= 20000) rents.add(v);
+  }
+  if (rents.size >= 3) signals += 2;
+  else if (rents.size === 2) signals += 1;
+
+  // Multiple property-name-like strings
+  const propNames = new Set<string>();
+  const propRe = /([A-Z][A-Za-z0-9&.' -]{2,40}(?:Apartment Homes|Apartments|Townhomes?|Lofts?|Village|Commons|Towers?|Homes|Residences?))/g;
+  let pm: RegExpExecArray | null;
+  while ((pm = propRe.exec(text)) !== null) {
+    propNames.add(pm[1].toLowerCase().trim());
+  }
+  if (propNames.size >= 3) signals += 2;
+  else if (propNames.size >= 2) signals += 1;
+
+  // Multiple explicit address lines
+  const addrRe = /(?:address|地址|addr)\s*[:：]\s*[^\n]+/gi;
+  let addrCount = 0;
+  while (addrRe.exec(text) !== null) addrCount++;
+  if (addrCount >= 2) signals += 2;
+
+  // Multiple listing headers
+  const headerCount = text.split("\n").filter((l) => isLikelyListingHeader(l)).length;
+  if (headerCount >= 3) signals += 2;
+  else if (headerCount >= 2) signals += 1;
+
+  if (signals >= 3) return Math.max(rents.size, propNames.size, headerCount, 2);
+  return 1;
+}
+
 // ── Main extraction function ───────────────────────────────────────────────
 export async function extractListingFromWeChat(params: {
   text?: string;
   imageBase64?: string;
   mimeType?: string;
-}): Promise<ExtractedListing> {
+}): Promise<ExtractListingResponse> {
   const { text, imageBase64, mimeType } = params;
 
   if (!text && !imageBase64) {
     throw new Error("Provide either text or an image to extract from");
+  }
+
+  // ── Preprocess text input ──────────────────────────────────────────────
+  let processedText = text;
+  let multiListing = false;
+  let preprocessSignals: PreprocessResult | null = null;
+
+  if (text) {
+    const prep = preprocessInput(text);
+    preprocessSignals = prep;
+    processedText = prep.text;
+    multiListing = prep.listingCount > 1;
+    if (prep.warnings.length > 0) {
+      console.log(
+        `[WeChat Import] Preprocessed: ${text.length}→${prep.text.length} chars, ` +
+        `~${prep.listingCount} listing(s), warnings: ${prep.warnings.join("; ")}`,
+      );
+    }
   }
 
   // No API key — fall back to regex heuristics so the form is still usable.
@@ -629,21 +1103,33 @@ export async function extractListingFromWeChat(params: {
   if (!ENV.geminiApiKey) {
     console.warn(
       "[WeChat Import] No Gemini key found (checked GEMINI_API_KEY and BUILT_IN_FORGE_API_KEY in app/.env) – " +
-      "falling back to heuristic regex extraction. Set either key to enable AI extraction."
+      "falling back to heuristic regex extraction. Set either key to enable AI extraction.",
     );
-    return await normalizeListingLocation({
-      ...heuristicExtraction(params),
-      extractionWarning: "Gemini unavailable; fallback used",
-    });
+    const heuristic = heuristicExtraction({ ...params, text: processedText });
+    return finalizeExtractionResponse({
+      ...heuristic,
+      confidence: multiListing ? "low" : heuristic.confidence,
+    }, preprocessSignals, [
+      toDiagnostic(
+        "gemini_unavailable",
+        "warning",
+        "Gemini was unavailable; heuristic extraction was used"
+      ),
+    ]);
   }
 
   // Build multimodal user message
   const userContent: Array<{ type: string; [key: string]: unknown }> = [];
 
-  if (text) {
+  if (processedText) {
+    const intro = multiListing
+      ? "This text contains multiple rental listings pasted together. " +
+        "Extract ONLY the single most complete listing (the one with the clearest rent, " +
+        "address, and bedroom details). Ignore the others.\n\n"
+      : "";
     userContent.push({
       type: "text",
-      text: `Extract rental listing data from this WeChat message:\n\n${text}`,
+      text: `${intro}Extract rental listing data from this WeChat message:\n\n${processedText}`,
     });
   }
 
@@ -655,7 +1141,7 @@ export async function extractListingFromWeChat(params: {
         detail: "high",
       },
     });
-    if (!text) {
+    if (!processedText) {
       userContent.push({
         type: "text",
         text: "Extract rental listing data from this WeChat screenshot.",
@@ -663,8 +1149,8 @@ export async function extractListingFromWeChat(params: {
     }
   }
 
-  const inputSummary = text
-    ? `text (${text.length} chars)`
+  const inputSummary = processedText
+    ? `text (${processedText.length} chars${multiListing ? ", multi-listing" : ""})`
     : `image (${imageBase64?.length ?? 0} base64 chars, ${mimeType})`;
   let result;
   try {
@@ -711,18 +1197,49 @@ export async function extractListingFromWeChat(params: {
       model: result.model,
     });
 
-    const fallback = heuristicExtraction(params);
+    const fallback = heuristicExtraction({ ...params, text: processedText });
     console.warn(
-      `[WeChat Import] ${parseResult.parseIssue}; fallback used`
+      `[WeChat Import] ${parseResult.parseIssue}; fallback used`,
     );
-    return await normalizeListingLocation({
+    const diagnostics: ImportDiagnostic[] = [];
+    if (parseResult.parseIssue === "invalid JSON from Gemini") {
+      diagnostics.push(
+        toDiagnostic(
+          "gemini_invalid_json",
+          "warning",
+          "Gemini returned malformed JSON; heuristic extraction was used"
+        )
+      );
+    } else if (parseResult.parseIssue === "schema mismatch") {
+      diagnostics.push(
+        toDiagnostic(
+          "schema_mismatch",
+          "warning",
+          "Gemini returned JSON that did not match the listing schema; heuristic extraction was used"
+        )
+      );
+    } else if (parseResult.parseIssue === "truncated response") {
+      diagnostics.push(
+        toDiagnostic(
+          "gemini_truncated",
+          "warning",
+          "Gemini response was truncated; heuristic extraction was used"
+        )
+      );
+    }
+
+    return finalizeExtractionResponse({
       ...fallback,
-      extractionWarning: `${parseResult.parseIssue}; fallback used`,
-    });
+      confidence: multiListing ? "low" : fallback.confidence,
+    }, preprocessSignals, diagnostics);
   }
 
-  return await normalizeListingLocation({
-    ...parseResult.parsed,
+  const listing = parseResult.parsed;
+  if (multiListing && listing.confidence === "high") {
+    listing.confidence = "medium";
+  }
+  return finalizeExtractionResponse({
+    ...listing,
     extractionSource: "gemini",
-  });
+  }, preprocessSignals);
 }

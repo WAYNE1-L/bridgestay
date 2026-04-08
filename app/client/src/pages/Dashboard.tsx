@@ -294,9 +294,11 @@ function StudentDashboard() {
 }
 
 function LandlordDashboard() {
+  const { user } = useAuth();
   const { data: stats, isLoading: statsLoading } = trpc.stats.landlord.useQuery();
   const { data: listings, isLoading: listingsLoading, refetch: refetchListings } = trpc.apartments.myListings.useQuery();
   const { data: applications, isLoading: appsLoading } = trpc.applications.landlordApplications.useQuery({});
+  const isAdmin = user?.role === "admin";
 
   const publishMutation = trpc.apartments.publish.useMutation({
     onSuccess: () => refetchListings(),
@@ -306,12 +308,14 @@ function LandlordDashboard() {
     <div className="space-y-8">
       {/* Quick actions */}
       <div className="flex flex-wrap gap-3">
-        <Link href="/import-listing">
-          <Button className="gap-2 bg-green-600 hover:bg-green-700 text-white">
-            <MessageSquare className="w-4 h-4" />
-            Import from WeChat
-          </Button>
-        </Link>
+        {isAdmin && (
+          <Link href="/admin/import">
+            <Button className="gap-2 bg-green-600 hover:bg-green-700 text-white">
+              <MessageSquare className="w-4 h-4" />
+              Import from WeChat
+            </Button>
+          </Link>
+        )}
         <Link href="/apartments">
           <Button variant="outline" className="gap-2">
             <Eye className="w-4 h-4" />
@@ -337,7 +341,7 @@ function LandlordDashboard() {
         <motion.div {...fadeInUp} transition={{ delay: 0.1 }}>
           <Card className="bg-card border-border">
             <CardHeader className="flex flex-row items-center justify-between pb-2">
-              <CardTitle className="text-sm font-medium text-muted-foreground">Active Listings</CardTitle>
+              <CardTitle className="text-sm font-medium text-muted-foreground">Published Listings</CardTitle>
               <Home className="w-4 h-4 text-muted-foreground" />
             </CardHeader>
             <CardContent>
@@ -378,12 +382,14 @@ function LandlordDashboard() {
             <CardTitle>Quick Actions</CardTitle>
           </CardHeader>
           <CardContent className="flex flex-wrap gap-3">
-            <Link href="/import-listing">
-              <Button className="gap-2 bg-green-600 hover:bg-green-700 text-white">
-                <MessageSquare className="w-4 h-4" />
-                Import from WeChat
-              </Button>
-            </Link>
+            {isAdmin && (
+              <Link href="/admin/import">
+                <Button className="gap-2 bg-green-600 hover:bg-green-700 text-white">
+                  <MessageSquare className="w-4 h-4" />
+                  Import from WeChat
+                </Button>
+              </Link>
+            )}
             <Button variant="outline" className="gap-2 bg-transparent" disabled title="Coming soon">
               <BarChart3 className="w-4 h-4" />
               Analytics
@@ -415,7 +421,7 @@ function LandlordDashboard() {
                   ? (() => { try { return JSON.parse(listing.images); } catch { return []; } })()
                   : [];
                 const thumb = thumbs[0] || null;
-                const isDraft = listing.status === "draft";
+                const canPublish = listing.status !== "published";
                 const isPublishing = publishMutation.isPending && publishMutation.variables?.id === listing.id;
 
                 return (
@@ -445,21 +451,27 @@ function LandlordDashboard() {
                               </span>
                               <Badge
                                 className={
-                                  listing.status === "active"
+                                  listing.status === "published"
                                     ? "bg-green-500/20 text-green-600 border-0 text-xs"
-                                    : listing.status === "rented"
-                                    ? "bg-blue-500/20 text-blue-400 border-0 text-xs"
+                                    : listing.status === "archived"
+                                    ? "bg-muted text-muted-foreground border-0 text-xs"
                                     : "bg-amber-500/15 text-amber-600 border-0 text-xs"
                                 }
                               >
-                                {listing.status === "active" ? "● Live" : listing.status === "draft" ? "○ Draft" : listing.status}
+                                {listing.status === "published"
+                                  ? "● Live"
+                                  : listing.status === "draft"
+                                  ? "○ Draft"
+                                  : listing.status === "pending_review"
+                                  ? "◐ Pending review"
+                                  : listing.status}
                               </Badge>
                             </div>
                           </div>
 
                           {/* Actions */}
                           <div className="flex items-center gap-2 flex-shrink-0">
-                            {isDraft && (
+                            {canPublish && (
                               <Button
                                 size="sm"
                                 className="bg-green-600 hover:bg-green-700 text-white gap-1"
@@ -495,12 +507,14 @@ function LandlordDashboard() {
                 <p className="text-muted-foreground mb-4">
                   Create your first property listing to start receiving applications.
                 </p>
-                <Link href="/import-listing">
-                  <Button className="gap-2 bg-green-600 hover:bg-green-700 text-white">
-                    <MessageSquare className="w-4 h-4" />
-                    Import from WeChat
-                  </Button>
-                </Link>
+                {isAdmin && (
+                  <Link href="/admin/import">
+                    <Button className="gap-2 bg-green-600 hover:bg-green-700 text-white">
+                      <MessageSquare className="w-4 h-4" />
+                      Import from WeChat
+                    </Button>
+                  </Link>
+                )}
               </CardContent>
             </Card>
           )}

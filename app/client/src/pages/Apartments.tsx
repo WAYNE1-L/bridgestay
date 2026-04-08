@@ -58,13 +58,31 @@ const US_STATES = [
 ];
 
 const PROPERTY_TYPES = [
-  { value: "apartment", label: "Apartment" },
-  { value: "studio", label: "Studio" },
-  { value: "house", label: "House" },
-  { value: "room", label: "Room" },
-  { value: "condo", label: "Condo" },
-  { value: "townhouse", label: "Townhouse" },
+  { value: "apartment", label: "Apartment", labelCn: "公寓" },
+  { value: "studio", label: "Studio", labelCn: "单间" },
+  { value: "house", label: "House", labelCn: "独栋" },
+  { value: "room", label: "Room", labelCn: "房间" },
+  { value: "condo", label: "Condo", labelCn: "公寓套房" },
+  { value: "townhouse", label: "Townhouse", labelCn: "联排别墅" },
 ];
+
+function parseNearbyUniversities(value: unknown): string[] {
+  if (!value) return [];
+  if (Array.isArray(value)) {
+    return value.filter((item): item is string => typeof item === "string" && item.length > 0);
+  }
+  if (typeof value === "string") {
+    try {
+      const parsed = JSON.parse(value);
+      return Array.isArray(parsed)
+        ? parsed.filter((item): item is string => typeof item === "string" && item.length > 0)
+        : [];
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
 
 interface ApartmentCardProps {
   apartment: any;
@@ -76,8 +94,7 @@ interface ApartmentCardProps {
 
 function ApartmentCard({ apartment, onSave, isSaved, isAdminMode = false, onDelete }: ApartmentCardProps) {
   const images = apartment.images ? JSON.parse(apartment.images) : [];
-  const amenities = apartment.amenities ? JSON.parse(apartment.amenities) : [];
-  const { language } = useLanguage();
+  const { language, t } = useLanguage();
   
   return (
     <motion.div
@@ -103,13 +120,13 @@ function ApartmentCard({ apartment, onSave, isSaved, isAdminMode = false, onDele
         <div className="absolute top-3 left-3 flex gap-2">
           {apartment.featured && (
             <span className="px-2 py-1 text-xs font-medium bg-primary text-primary-foreground rounded-full">
-              Featured
+              {t("listings.featured")}
             </span>
           )}
           {apartment.noSsnRequired && (
             <span className="px-2 py-1 text-xs font-medium bg-green-500/20 text-green-400 rounded-full flex items-center gap-1">
               <Shield className="w-3 h-3" />
-              No SSN
+              {t("listings.noSsn")}
             </span>
           )}
         </div>
@@ -134,7 +151,7 @@ function ApartmentCard({ apartment, onSave, isSaved, isAdminMode = false, onDele
           {/* Price */}
           <div className="flex items-baseline gap-1 mb-2">
             <span className="text-2xl font-bold">${Number(apartment.monthlyRent).toLocaleString()}</span>
-            <span className="text-muted-foreground">/month</span>
+            <span className="text-muted-foreground">{t("detail.perMonth")}</span>
           </div>
           
           {/* Title */}
@@ -150,16 +167,16 @@ function ApartmentCard({ apartment, onSave, isSaved, isAdminMode = false, onDele
           <div className="flex items-center gap-4 text-sm text-muted-foreground mb-3">
             <span className="flex items-center gap-1">
               <Bed className="w-4 h-4" />
-              {apartment.bedrooms} {apartment.bedrooms === 1 ? "bed" : "beds"}
+              {apartment.bedrooms} {Number(apartment.bedrooms) === 1 ? t("listings.bed") : t("listings.beds")}
             </span>
             <span className="flex items-center gap-1">
               <Bath className="w-4 h-4" />
-              {apartment.bathrooms} {Number(apartment.bathrooms) === 1 ? "bath" : "baths"}
+              {apartment.bathrooms} {Number(apartment.bathrooms) === 1 ? t("listings.bath") : t("listings.baths")}
             </span>
             {apartment.squareFeet && (
               <span className="flex items-center gap-1">
                 <Square className="w-4 h-4" />
-                {apartment.squareFeet} sqft
+                {apartment.squareFeet} {t("listings.sqft")}
               </span>
             )}
           </div>
@@ -169,13 +186,13 @@ function ApartmentCard({ apartment, onSave, isSaved, isAdminMode = false, onDele
             {apartment.petsAllowed && (
               <span className="px-2 py-1 text-xs bg-accent rounded-full flex items-center gap-1">
                 <PawPrint className="w-3 h-3" />
-                Pets OK
+                {t("listings.petsOk")}
               </span>
             )}
             {apartment.parkingIncluded && (
               <span className="px-2 py-1 text-xs bg-accent rounded-full flex items-center gap-1">
                 <Car className="w-3 h-3" />
-                Parking
+                {t("listings.parking")}
               </span>
             )}
           </div>
@@ -189,11 +206,11 @@ function ApartmentCard({ apartment, onSave, isSaved, isAdminMode = false, onDele
                 {signals.map((s) => (
                   <span
                     key={s.id}
-                    title={s.description}
+                    title={t(`signals.${s.id}.description`)}
                     className={`px-2 py-1 text-xs font-medium rounded-full flex items-center gap-1 ${s.colorClasses}`}
                   >
                     <span aria-hidden="true">{s.emoji}</span>
-                    {s.label}
+                    {t(`signals.${s.id}.label`)}
                   </span>
                 ))}
               </div>
@@ -212,7 +229,7 @@ function ApartmentCard({ apartment, onSave, isSaved, isAdminMode = false, onDele
                   }}
                   className="flex-1 px-3 py-1.5 text-xs font-medium border border-blue-300 text-blue-600 hover:bg-blue-50 rounded-lg flex items-center justify-center gap-1"
                 >
-                  🔗 Source Link
+                  🔗 {t("listings.sourceLink")}
                 </button>
               )}
               <button
@@ -225,7 +242,7 @@ function ApartmentCard({ apartment, onSave, isSaved, isAdminMode = false, onDele
                 }}
                 className="px-3 py-1.5 text-xs font-medium border border-red-300 text-red-600 hover:bg-red-50 rounded-lg flex items-center justify-center gap-1"
               >
-                🗑️ Delete
+                🗑️ {t("listings.delete")}
               </button>
             </div>
           )}
@@ -236,9 +253,10 @@ function ApartmentCard({ apartment, onSave, isSaved, isAdminMode = false, onDele
 }
 
 export default function Apartments() {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated, user } = useAuth();
   const { allListings: contextListings } = useListings();
-  const { language } = useLanguage();
+  const { language, t } = useLanguage();
+  const utils = trpc.useUtils();
   const searchString = useSearch();
   const mapRef = useRef<google.maps.Map | null>(null);
   const markersRef = useRef<google.maps.marker.AdvancedMarkerElement[]>([]);
@@ -246,7 +264,15 @@ export default function Apartments() {
   // Hidden admin mode - only enabled with ?admin=true in URL
   const isAdminMode = useMemo(() => {
     const params = new URLSearchParams(searchString);
-    return params.get('admin') === 'true';
+    return params.get('admin') === 'true' && user?.role === "admin";
+  }, [searchString, user?.role]);
+  const querySearchCity = useMemo(() => {
+    const params = new URLSearchParams(searchString);
+    return params.get("search")?.trim() ?? "";
+  }, [searchString]);
+  const queryNearUniversity = useMemo(() => {
+    const params = new URLSearchParams(searchString);
+    return params.get("nearUniversity")?.trim() ?? "";
   }, [searchString]);
   
   // View state
@@ -255,27 +281,39 @@ export default function Apartments() {
   const [sortBy, setSortBy] = useState<"newest" | "price_low" | "price_high">("newest");
   
   // Filter state
-  const [searchCity, setSearchCity] = useState("");
+  const [searchCity, setSearchCity] = useState(querySearchCity);
   const [selectedState, setSelectedState] = useState<string>("");
   const [priceRange, setPriceRange] = useState([0, 5000]);
   const [bedrooms, setBedrooms] = useState<string>("");
+  const [bathrooms, setBathrooms] = useState<string>("");
   const [propertyType, setPropertyType] = useState<string>("");
   const [petsAllowed, setPetsAllowed] = useState(false);
   const [parkingIncluded, setParkingIncluded] = useState(false);
   
   // Stable filter object for query
   const [appliedFilters, setAppliedFilters] = useState({
-    city: "",
+    city: querySearchCity,
     state: "",
     minPrice: 0,
     maxPrice: 5000,
     bedrooms: undefined as number | undefined,
+    bathrooms: undefined as number | undefined,
     propertyType: "",
     petsAllowed: false,
     parkingIncluded: false,
+    nearUniversity: queryNearUniversity,
   });
+
+  useEffect(() => {
+    setSearchCity(querySearchCity);
+    setAppliedFilters((prev) => ({
+      ...prev,
+      city: querySearchCity,
+      nearUniversity: queryNearUniversity,
+    }));
+  }, [querySearchCity, queryNearUniversity]);
   
-  // Fetch public active listings
+  // Fetch public published listings
   const { data: apartments, isLoading, refetch } = trpc.apartments.list.useQuery({
     ...appliedFilters,
     limit: 50,
@@ -283,18 +321,15 @@ export default function Apartments() {
   });
   const deleteMutation = trpc.apartments.delete.useMutation({
     onSuccess: async () => {
+      await Promise.all([
+        refetch(),
+        utils.apartments.myListings.invalidate(),
+      ]);
       toast.success(language === 'cn' ? '房源已删除' : 'Listing deleted');
-      await refetch();
     },
     onError: (error) => {
       toast.error(error.message || (language === 'cn' ? '删除失败' : 'Failed to delete'));
     },
-  });
-
-  // Fetch the current user's own listings (includes drafts) so newly imported
-  // listings are always visible to their owner regardless of status.
-  const { data: myListings } = trpc.apartments.myListings.useQuery(undefined, {
-    enabled: isAuthenticated,
   });
 
   // Saved apartments
@@ -304,14 +339,20 @@ export default function Apartments() {
   
   const saveMutation = trpc.apartments.save.useMutation({
     onSuccess: () =>
-      toast.success("Saved!", {
-        description: "View all your saved listings in the dashboard.",
-        action: { label: "View saved →", onClick: () => (window.location.href = "/dashboard") },
+      toast.success(t("detail.toast.saved"), {
+        description: t("detail.toast.savedDesc"),
+        action: { label: t("detail.toast.viewSaved"), onClick: () => (window.location.href = "/dashboard") },
       }),
+    onError: (error) => {
+      toast.error(error.message || t("apartments.toast.saveFailed"));
+    },
   });
 
   const unsaveMutation = trpc.apartments.unsave.useMutation({
-    onSuccess: () => toast.success("Removed from saved listings"),
+    onSuccess: () => toast.success(t("detail.toast.unsaved")),
+    onError: (error) => {
+      toast.error(error.message || t("apartments.toast.unsaveFailed"));
+    },
   });
   
   const savedIds = useMemo(() => {
@@ -321,17 +362,62 @@ export default function Apartments() {
   // Merge database apartments with context listings (from AI Generator)
   const mergedApartments = useMemo(() => {
     const publicListings = apartments || [];
-    const ownerListings = myListings || [];
+    const matchesAppliedFilters = (apartment: any) => {
+      if (
+        appliedFilters.city &&
+        !String(apartment.city ?? "").toLowerCase().includes(appliedFilters.city.toLowerCase())
+      ) {
+        return false;
+      }
+      if (appliedFilters.state && apartment.state !== appliedFilters.state) {
+        return false;
+      }
+      if (appliedFilters.minPrice && Number(apartment.monthlyRent) < appliedFilters.minPrice) {
+        return false;
+      }
+      if (appliedFilters.maxPrice && Number(apartment.monthlyRent) > appliedFilters.maxPrice) {
+        return false;
+      }
+      if (appliedFilters.bedrooms && Number(apartment.bedrooms) !== appliedFilters.bedrooms) {
+        return false;
+      }
+      if (appliedFilters.bathrooms && Number(apartment.bathrooms) !== appliedFilters.bathrooms) {
+        return false;
+      }
+      if (
+        appliedFilters.propertyType &&
+        String(apartment.propertyType ?? "").toLowerCase() !== appliedFilters.propertyType
+      ) {
+        return false;
+      }
+      if (appliedFilters.petsAllowed === true && apartment.petsAllowed !== true) {
+        return false;
+      }
+      if (appliedFilters.parkingIncluded === true && apartment.parkingIncluded !== true) {
+        return false;
+      }
+      if (appliedFilters.nearUniversity.trim()) {
+        const normalizedUniversity = appliedFilters.nearUniversity.trim().toLowerCase();
+        const nearbyUniversities = parseNearbyUniversities(apartment.nearbyUniversities);
+        if (
+          !nearbyUniversities.some((university) =>
+            university.toLowerCase().includes(normalizedUniversity)
+          )
+        ) {
+          return false;
+        }
+      }
+      return true;
+    };
 
-    // Merge owner's own listings (all statuses) with public active listings.
-    // Owner listings that are already in the public list (active) are deduplicated
-    // so they don't appear twice.
-    const publicIds = new Set(publicListings.map((a: any) => a.id));
-    const ownedNotPublic = ownerListings.filter((a: any) => !publicIds.has(a.id));
-    const dbApartments = [...publicListings, ...ownedNotPublic];
+    // Keep the public apartments page published-only. Draft and archived
+    // owner/admin listings stay visible in dashboard and admin management.
+    const dbApartments = publicListings;
 
     // Convert context listings to apartment format
-    const contextApartments = contextListings.map((listing) => ({
+    const contextApartments = contextListings
+      .filter((listing) => listing.status === "published")
+      .map((listing) => ({
       id: `ctx_${listing.id}`,
       title: language === "cn" ? listing.title.cn : listing.title.en,
       description: language === "cn" ? listing.description.cn : listing.description.en,
@@ -352,6 +438,9 @@ export default function Apartments() {
       bedrooms: listing.bedrooms ?? null,
       bathrooms: listing.bathrooms != null ? String(listing.bathrooms) : null,
       squareFeet: listing.squareFeet ?? null,
+      nearbyUniversities: listing.nearbyUniversities?.length
+        ? JSON.stringify(listing.nearbyUniversities)
+        : undefined,
       petsAllowed: listing.petsAllowed ?? false,
       parkingIncluded: listing.parkingIncluded ?? false,
       noSsnRequired: listing.noSsnRequired ?? true,
@@ -361,7 +450,7 @@ export default function Apartments() {
     }));
     
     // DB listings first (real imports), then Supabase context listings
-    const combined = [...dbApartments, ...contextApartments];
+    const combined = [...dbApartments, ...contextApartments.filter(matchesAppliedFilters)];
     
     // Apply sorting
     return combined.sort((a, b) => {
@@ -375,17 +464,17 @@ export default function Apartments() {
           return 0; // Keep original order (newest first from DB)
       }
     });
-  }, [apartments, myListings, contextListings, language, sortBy]);
+  }, [apartments, contextListings, language, sortBy, appliedFilters]);
   
   const handleSave = useCallback((apartmentId: number | string) => {
     if (!isAuthenticated) {
-      toast.error("Please sign in to save apartments");
+      toast.error(t("detail.toast.signInToSave"));
       return;
     }
     
     // Skip save for context-based listings (they have string IDs like "ctx_1")
     if (typeof apartmentId === "string") {
-      toast.info(language === "cn" ? "此房源暂不支持收藏" : "This listing cannot be saved yet");
+      toast.info(t("apartments.toast.contextSaveUnavailable"));
       return;
     }
     
@@ -394,7 +483,7 @@ export default function Apartments() {
     } else {
       saveMutation.mutate({ apartmentId });
     }
-  }, [isAuthenticated, savedIds, saveMutation, unsaveMutation, language]);
+  }, [isAuthenticated, savedIds, saveMutation, t, unsaveMutation, language]);
   
   const applyFilters = useCallback(() => {
     setAppliedFilters({
@@ -404,18 +493,21 @@ export default function Apartments() {
       minPrice: priceRange[0],
       maxPrice: priceRange[1],
       bedrooms: bedrooms && bedrooms !== "any" ? parseInt(bedrooms) : undefined,
+      bathrooms: bathrooms && bathrooms !== "any" ? parseInt(bathrooms) : undefined,
       propertyType: propertyType === "any" ? "" : propertyType,
       petsAllowed,
       parkingIncluded,
+      nearUniversity: appliedFilters.nearUniversity,
     });
     setShowFilters(false);
-  }, [searchCity, selectedState, priceRange, bedrooms, propertyType, petsAllowed, parkingIncluded]);
+  }, [searchCity, selectedState, priceRange, bedrooms, bathrooms, propertyType, petsAllowed, parkingIncluded, appliedFilters.nearUniversity]);
   
   const clearFilters = useCallback(() => {
     setSearchCity("");
     setSelectedState("");
     setPriceRange([0, 5000]);
     setBedrooms("");
+    setBathrooms("");
     setPropertyType("");
     setPetsAllowed(false);
     setParkingIncluded(false);
@@ -425,24 +517,24 @@ export default function Apartments() {
       minPrice: 0,
       maxPrice: 5000,
       bedrooms: undefined,
+      bathrooms: undefined,
       propertyType: "",
       petsAllowed: false,
       parkingIncluded: false,
+      nearUniversity: "",
     });
   }, []);
   
-  // Update map markers when apartments change
+  // Update map markers from the same final dataset rendered in the list.
   const updateMapMarkers = useCallback((map: google.maps.Map) => {
     // Clear existing markers
     markersRef.current.forEach(marker => marker.map = null);
     markersRef.current = [];
-    
-    if (!apartments) return;
-    
+
     const bounds = new google.maps.LatLngBounds();
     let hasValidCoords = false;
-    
-    apartments.forEach((apartment: any) => {
+
+    mergedApartments.forEach((apartment: any) => {
       if (apartment.latitude && apartment.longitude) {
         const position = {
           lat: parseFloat(apartment.latitude),
@@ -475,7 +567,7 @@ export default function Apartments() {
     if (hasValidCoords) {
       map.fitBounds(bounds);
     }
-  }, [apartments]);
+  }, [mergedApartments]);
   
   // Handle map ready
   const handleMapReady = useCallback((map: google.maps.Map) => {
@@ -488,16 +580,26 @@ export default function Apartments() {
     if (mapRef.current && viewMode === "map") {
       updateMapMarkers(mapRef.current);
     }
-  }, [apartments, viewMode, updateMapMarkers]);
+  }, [mergedApartments, viewMode, updateMapMarkers]);
+
+  const listingsMissingMapCoordinates = useMemo(
+    () =>
+      mergedApartments.filter(
+        (apartment: any) => !apartment.latitude || !apartment.longitude
+      ).length,
+    [mergedApartments]
+  );
 
   // True when any filter is active — used to pick the right empty-state message
   const hasActiveFilters =
     appliedFilters.city !== "" ||
     appliedFilters.state !== "" ||
     appliedFilters.bedrooms !== undefined ||
+    appliedFilters.bathrooms !== undefined ||
     appliedFilters.propertyType !== "" ||
     appliedFilters.petsAllowed ||
     appliedFilters.parkingIncluded ||
+    appliedFilters.nearUniversity !== "" ||
     appliedFilters.minPrice > 0 ||
     appliedFilters.maxPrice < 5000;
 
@@ -515,7 +617,7 @@ export default function Apartments() {
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-muted-foreground" />
                   <Input
-                    placeholder={language === "cn" ? "搜索城市或区域..." : "Search by city..."}
+                    placeholder={t("apartments.searchPlaceholder")}
                     value={searchCity}
                     onChange={(e) => setSearchCity(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && applyFilters()}
@@ -551,7 +653,7 @@ export default function Apartments() {
                   className="gap-2 bg-transparent"
                 >
                   <Filter className="w-4 h-4" />
-                  {language === "cn" ? "筛选" : "Filters"}
+                  {t("apartments.filters")}
                   <ChevronDown className={`w-4 h-4 transition-transform ${showFilters ? "rotate-180" : ""}`} />
                 </Button>
               </div>
@@ -570,13 +672,13 @@ export default function Apartments() {
                   <div className="pt-6 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
                     {/* State */}
                     <div className="space-y-2">
-                      <Label>{language === "cn" ? "州" : "State"}</Label>
+                      <Label>{t("apartments.state")}</Label>
                       <Select value={selectedState} onValueChange={setSelectedState}>
                         <SelectTrigger className="bg-background">
-                          <SelectValue placeholder="Any state" />
+                          <SelectValue placeholder={t("apartments.anyState")} />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="any">Any state</SelectItem>
+                          <SelectItem value="any">{t("apartments.anyState")}</SelectItem>
                           {US_STATES.map((state) => (
                             <SelectItem key={state} value={state}>
                               {state}
@@ -588,7 +690,7 @@ export default function Apartments() {
                     
                     {/* Price Range */}
                     <div className="space-y-2">
-                      <Label>{language === "cn" ? `价格范围: $${priceRange[0]} - $${priceRange[1]}` : `Price Range: $${priceRange[0]} - $${priceRange[1]}`}</Label>
+                      <Label>{t("apartments.priceRange")}: ${priceRange[0]} - ${priceRange[1]}</Label>
                       <Slider
                         value={priceRange}
                         onValueChange={setPriceRange}
@@ -601,34 +703,50 @@ export default function Apartments() {
                     
                     {/* Bedrooms */}
                     <div className="space-y-2">
-                      <Label>{language === "cn" ? "卧室" : "Bedrooms"}</Label>
+                      <Label>{t("apartments.bedrooms")}</Label>
                       <Select value={bedrooms} onValueChange={setBedrooms}>
                         <SelectTrigger className="bg-background">
-                          <SelectValue placeholder="Any" />
+                          <SelectValue placeholder={t("apartments.any")} />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="any">Any</SelectItem>
-                          <SelectItem value="0">Studio</SelectItem>
-                          <SelectItem value="1">1 Bedroom</SelectItem>
-                          <SelectItem value="2">2 Bedrooms</SelectItem>
-                          <SelectItem value="3">3 Bedrooms</SelectItem>
-                          <SelectItem value="4">4+ Bedrooms</SelectItem>
+                          <SelectItem value="any">{t("apartments.any")}</SelectItem>
+                          <SelectItem value="0">{t("apartments.studio")}</SelectItem>
+                          <SelectItem value="1">{t("apartments.oneBedroom")}</SelectItem>
+                          <SelectItem value="2">{t("apartments.twoBedrooms")}</SelectItem>
+                          <SelectItem value="3">{t("apartments.threeBedrooms")}</SelectItem>
+                          <SelectItem value="4">{t("apartments.fourBedrooms")}</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+
+                    {/* Bathrooms */}
+                    <div className="space-y-2">
+                      <Label>{t("apartments.bathrooms")}</Label>
+                      <Select value={bathrooms} onValueChange={setBathrooms}>
+                        <SelectTrigger className="bg-background">
+                          <SelectValue placeholder={t("apartments.any")} />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="any">{t("apartments.any")}</SelectItem>
+                          <SelectItem value="1">{t("apartments.oneBathroom")}</SelectItem>
+                          <SelectItem value="2">{t("apartments.twoBathrooms")}</SelectItem>
+                          <SelectItem value="3">{t("apartments.threeBathrooms")}</SelectItem>
                         </SelectContent>
                       </Select>
                     </div>
                     
                     {/* Property Type */}
                     <div className="space-y-2">
-                      <Label>{language === "cn" ? "房型" : "Property Type"}</Label>
+                      <Label>{t("apartments.propertyType")}</Label>
                       <Select value={propertyType} onValueChange={setPropertyType}>
                         <SelectTrigger className="bg-background">
-                          <SelectValue placeholder="Any type" />
+                          <SelectValue placeholder={t("apartments.anyType")} />
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="any">Any type</SelectItem>
+                          <SelectItem value="any">{t("apartments.anyType")}</SelectItem>
                           {PROPERTY_TYPES.map((type) => (
                             <SelectItem key={type.value} value={type.value}>
-                              {type.label}
+                              {language === "cn" ? type.labelCn : type.label}
                             </SelectItem>
                           ))}
                         </SelectContent>
@@ -642,24 +760,24 @@ export default function Apartments() {
                           checked={petsAllowed}
                           onCheckedChange={setPetsAllowed}
                         />
-                        <Label className="cursor-pointer">{language === "cn" ? "允许宠物" : "Pets Allowed"}</Label>
+                        <Label className="cursor-pointer">{t("apartments.petsAllowed")}</Label>
                       </div>
                       <div className="flex items-center gap-2">
                         <Switch
                           checked={parkingIncluded}
                           onCheckedChange={setParkingIncluded}
                         />
-                        <Label className="cursor-pointer">{language === "cn" ? "含停车位" : "Parking Included"}</Label>
+                        <Label className="cursor-pointer">{t("apartments.parkingIncluded")}</Label>
                       </div>
                     </div>
                     
                     {/* Action Buttons */}
                     <div className="flex gap-3 col-span-full">
                       <Button onClick={applyFilters} className="glow-sm">
-                        {language === "cn" ? "应用筛选" : "Apply Filters"}
+                        {t("apartments.applyFilters")}
                       </Button>
                       <Button variant="outline" onClick={clearFilters} className="bg-transparent">
-                        {language === "cn" ? "清除全部" : "Clear All"}
+                        {t("apartments.clearAll")}
                       </Button>
                     </div>
                   </div>
@@ -676,10 +794,10 @@ export default function Apartments() {
             <div className="flex items-center gap-4">
               <p className="text-muted-foreground">
                 {isLoading ? (
-                  language === "cn" ? "加载中..." : "Loading..."
+                  t("apartments.loading")
                 ) : (
                   <>
-                    <span className="font-semibold text-foreground">{mergedApartments.length}</span> {language === "cn" ? "套房源" : "apartments found"}
+                    <span className="font-semibold text-foreground">{mergedApartments.length}</span> {t("apartments.found")}
                   </>
                 )}
               </p>
@@ -690,9 +808,9 @@ export default function Apartments() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="newest">{language === "cn" ? "最新发布" : "Newest"}</SelectItem>
-                  <SelectItem value="price_low">{language === "cn" ? "价格从低到高" : "Price: Low to High"}</SelectItem>
-                  <SelectItem value="price_high">{language === "cn" ? "价格从高到低" : "Price: High to Low"}</SelectItem>
+                  <SelectItem value="newest">{t("apartments.newest")}</SelectItem>
+                  <SelectItem value="price_low">{t("apartments.priceLow")}</SelectItem>
+                  <SelectItem value="price_high">{t("apartments.priceHigh")}</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -701,7 +819,7 @@ export default function Apartments() {
             <div className="flex items-center gap-2 px-3 py-1.5 bg-primary/10 rounded-full">
               <GraduationCap className="w-4 h-4 text-primary" />
               <span className="text-sm font-medium">
-                {language === "cn" ? "所有房源均接受国际留学生" : "All listings accept international students"}
+                {t("apartments.studentBadge")}
               </span>
             </div>
           </div>
@@ -752,6 +870,19 @@ export default function Apartments() {
               
               {/* List */}
               <div className="overflow-y-auto space-y-4 h-full">
+                {listingsMissingMapCoordinates > 0 && mergedApartments.length > 0 && (
+                  <div className="rounded-xl border border-border bg-muted/40 px-4 py-3 text-sm text-muted-foreground">
+                    {language === "cn"
+                      ? `${listingsMissingMapCoordinates} 套匹配房源暂时没有地图坐标，因此只显示在列表中。`
+                      : `${listingsMissingMapCoordinates} matching ${
+                          listingsMissingMapCoordinates === 1 ? "listing" : "listings"
+                        } ${
+                          listingsMissingMapCoordinates === 1 ? "does" : "do"
+                        } not have map coordinates yet, so ${
+                          listingsMissingMapCoordinates === 1 ? "it appears" : "they appear"
+                        } in the list only.`}
+                  </div>
+                )}
                 {mergedApartments.map((apartment: any) => (
                   <ApartmentCard
                     key={apartment.id}
@@ -777,32 +908,32 @@ export default function Apartments() {
               {hasActiveFilters ? (
                 <>
                   <h3 className="text-xl font-semibold mb-2">
-                    {language === "cn" ? "暂无匹配房源" : "No listings match your filters"}
+                    {t("apartments.noMatches")}
                   </h3>
                   <p className="text-muted-foreground mb-6">
-                    {language === "cn"
-                      ? "尝试调整筛选条件或搜索其他区域"
-                      : "Try widening your search — adjust the price range, city, or remove a filter."}
+                    {t("apartments.noMatchesDesc")}
                   </p>
                   <Button onClick={clearFilters} variant="outline" className="bg-transparent">
-                    {language === "cn" ? "清除筛选" : "Clear Filters"}
+                    {t("apartments.clearFilters")}
                   </Button>
                 </>
               ) : (
                 <>
                   <h3 className="text-xl font-semibold mb-2">
-                    {language === "cn" ? "暂无房源" : "No listings yet"}
+                    {t("apartments.noListings")}
                   </h3>
                   <p className="text-muted-foreground mb-6">
-                    {language === "cn"
-                      ? "成为第一个从微信导入房源的房东"
-                      : "Be the first to import a listing from WeChat — it takes under 2 minutes."}
+                    {user?.role === "admin"
+                      ? t("apartments.adminEmpty")
+                      : t("apartments.publicEmpty")}
                   </p>
-                  <Button asChild>
-                    <Link href="/import-listing">
-                      {language === "cn" ? "导入微信房源" : "Import a Listing"}
-                    </Link>
-                  </Button>
+                  {user?.role === "admin" && (
+                    <Button asChild>
+                      <Link href="/admin/import">
+                        {t("apartments.importListing")}
+                      </Link>
+                    </Button>
+                  )}
                 </>
               )}
             </div>

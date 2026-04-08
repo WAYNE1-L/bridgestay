@@ -8,7 +8,10 @@ import { useLocation } from "wouter";
 export default function AIGenerator() {
   const [, navigate] = useLocation();
   useEffect(() => {
-    navigate("/import-listing", { replace: true });
+    const devAuth = new URLSearchParams(window.location.search).get("devAuth");
+    const devAuthQuery =
+      devAuth === "guest" || devAuth === "demoAdmin" ? `?devAuth=${devAuth}` : "";
+    navigate(`/admin/import${devAuthQuery}`, { replace: true });
   }, [navigate]);
   return null;
 }

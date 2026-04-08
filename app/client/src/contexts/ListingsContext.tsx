@@ -18,7 +18,15 @@ export interface ContactInfo {
 export type ReviewStatus = "pending" | "approved" | "rejected";
 
 // Listing status type
-export type ListingStatus = "available" | "rented" | "hidden";
+export type ListingStatus =
+  | "draft"
+  | "pending_review"
+  | "published"
+  | "rejected"
+  | "archived"
+  | "available"
+  | "rented"
+  | "hidden";
 
 // Bilingual listing type
 export interface BilingualListing {
@@ -45,6 +53,7 @@ export interface BilingualListing {
   bedrooms?: number | null;       // 0 = studio
   bathrooms?: number | null;
   squareFeet?: number | null;
+  nearbyUniversities?: string[];
   petsAllowed?: boolean;
   parkingIncluded?: boolean;
   noSsnRequired?: boolean;        // defaults to true for all BridgeStay listings

@@ -19,6 +19,63 @@ import AdminReview from "./pages/AdminReview";
 import Investors from "./pages/Investors";
 import ImportListing from "./pages/ImportListing";
 import { AIConsultant } from "./components/AIConsultant";
+import { AdminRoute } from "./components/AdminRoute";
+import { useAuth } from "./_core/hooks/useAuth";
+import { useEffect } from "react";
+import { useLocation } from "wouter";
+
+function AdminImportRedirect() {
+  const [, navigate] = useLocation();
+
+  useEffect(() => {
+    const devAuth = new URLSearchParams(window.location.search).get("devAuth");
+    const devAuthQuery =
+      devAuth === "guest" || devAuth === "demoAdmin" ? `?devAuth=${devAuth}` : "";
+    navigate(`/admin/import${devAuthQuery}`, { replace: true });
+  }, [navigate]);
+
+  return null;
+}
+
+function AdminPage() {
+  return (
+    <AdminRoute>
+      <Admin />
+    </AdminRoute>
+  );
+}
+
+function AdminGeneratorPage() {
+  return (
+    <AdminRoute>
+      <AIGenerator />
+    </AdminRoute>
+  );
+}
+
+function AdminReviewPage() {
+  return (
+    <AdminRoute>
+      <AdminReview />
+    </AdminRoute>
+  );
+}
+
+function AdminImportPage() {
+  return (
+    <AdminRoute>
+      <ImportListing />
+    </AdminRoute>
+  );
+}
+
+function LegacyImportPage() {
+  return (
+    <AdminRoute>
+      <AdminImportRedirect />
+    </AdminRoute>
+  );
+}
 
 function Router() {
   return (
@@ -30,15 +87,23 @@ function Router() {
       <Route path={"/apply/:id"} component={Apply} />
       <Route path={"/how-it-works"} component={HowItWorks} />
       <Route path={"/documents"} component={Documents} />
-      <Route path={"/admin"} component={Admin} />
-      <Route path={"/admin/generator"} component={AIGenerator} />
-      <Route path={"/admin/review"} component={AdminReview} />
+      <Route path={"/admin"} component={AdminPage} />
+      <Route path={"/admin/generator"} component={AdminGeneratorPage} />
+      <Route path={"/admin/review"} component={AdminReviewPage} />
+      <Route path={"/admin/import"} component={AdminImportPage} />
       <Route path={"/investors"} component={Investors} />
-      <Route path={"/import-listing"} component={ImportListing} />
+      <Route path={"/import-listing"} component={LegacyImportPage} />
       <Route path={"/404"} component={NotFound} />
       <Route component={NotFound} />
     </Switch>
   );
+}
+
+/** Only render the mock AI chatbot for authenticated admins (demo feature). */
+function AdminAIConsultant() {
+  const { user } = useAuth();
+  if (user?.role !== "admin") return null;
+  return <AIConsultant />;
 }
 
 function App() {
@@ -50,7 +115,7 @@ function App() {
             <TooltipProvider>
               <Toaster />
               <Router />
-              <AIConsultant />
+              <AdminAIConsultant />
             </TooltipProvider>
           </ListingsProvider>
         </LanguageProvider>

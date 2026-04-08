@@ -22,6 +22,12 @@ import {
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
 import { Badge } from "@/components/ui/badge";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
+import { trackEvent } from "@/lib/analytics";
 import { MultiImageUpload } from "@/components/MultiImageUpload";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
@@ -39,6 +45,11 @@ import {
   MapPin,
   DollarSign,
   BedDouble,
+  Sparkles,
+  ShieldAlert,
+  Tag,
+  Lightbulb,
+  ChevronDown,
 } from "lucide-react";
 
 // ── Types ──────────────────────────────────────────────────────────────────
@@ -72,8 +83,16 @@ type ExtractedListing = {
   confidence: "high" | "medium" | "low";
   extractionSource?: "gemini" | "heuristic-fallback";
   extractionWarning?: string;
+  extractionWarnings?: string[];
   locationSource?: "direct_text" | "place_lookup" | "unresolved";
   locationConfidence?: "high" | "medium" | "low";
+  duplicateContentRemoved?: boolean;
+  multipleListingCandidatesDetected?: boolean;
+  conflictingAddressesDetected?: boolean;
+  extractedFromBestCandidateChunk?: boolean;
+  candidateChunkCount?: number;
+  truncatedPreviewOfOtherChunks?: string[];
+  otherCandidateChunks?: string[];
 };
 
 type PropertyType =
@@ -179,17 +198,17 @@ function applyExtracted(form: FormState, e: ExtractedListing): FormState {
 
 const CONFIDENCE = {
   high: {
-    label: "High confidence — most fields extracted successfully",
+    label: "高置信度 — 大多数字段已成功提取",
     classes: "bg-green-500/15 text-green-600 dark:text-green-400 border-green-500/30",
     Icon: CheckCircle2,
   },
   medium: {
-    label: "Medium confidence — please review and fill missing fields",
+    label: "中等置信度 — 请复核并补充缺失字段",
     classes: "bg-yellow-500/15 text-yellow-600 dark:text-yellow-400 border-yellow-500/30",
     Icon: AlertCircle,
   },
   low: {
-    label: "Low confidence — the AI could not find much structure; fill manually",
+    label: "低置信度 — AI 未能识别足够结构，请手动补充",
     classes: "bg-red-500/15 text-red-600 dark:text-red-400 border-red-500/30",
     Icon: AlertCircle,
   },
@@ -231,6 +250,178 @@ function StepBar({ current }: { current: Step }) {
   );
 }
 
+// ── AI skill analysis types ───────────────────────────────────────────────
+
+type SkillResult = {
+  summary: string;
+  strengths: string[];
+  risks: string[];
+  recommendations: string[];
+  confidence: "high" | "medium" | "low";
+  extra?: Record<string, unknown>;
+};
+type SkillAnalysis = { skillName: string; result: SkillResult; model: string };
+type SkillStatus = "idle" | "loading" | "done" | "error";
+
+function normalizeSkillAnalysis(data: unknown): SkillAnalysis {
+  const payload = (data ?? {}) as Record<string, unknown>;
+  const result = (payload.result ?? {}) as Record<string, unknown>;
+
+  return {
+    skillName: String(payload.skillName ?? ""),
+    model: String(payload.model ?? ""),
+    result: {
+      summary: String(result.summary ?? ""),
+      strengths: Array.isArray(result.strengths) ? result.strengths.map(String) : [],
+      risks: Array.isArray(result.risks) ? result.risks.map(String) : [],
+      recommendations: Array.isArray(result.recommendations)
+        ? result.recommendations.map(String)
+        : [],
+      confidence: (
+        ["high", "medium", "low"].includes(result.confidence as string)
+          ? result.confidence
+          : "low"
+      ) as SkillResult["confidence"],
+      extra:
+        typeof result.extra === "object" && result.extra
+          ? (result.extra as Record<string, unknown>)
+          : undefined,
+    },
+  };
+}
+
+function hasSubleaseSignal(listing: ExtractedListing): boolean {
+  return listing.isSublease === true || Boolean(listing.subleaseEndDate);
+}
+
+function splitCommaSeparated(value: string): string[] {
+  return value
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+}
+
+type MissingFieldKey =
+  | "availableFrom"
+  | "subleaseEndDate"
+  | "parkingIncluded"
+  | "furnished"
+  | "monthlyRent";
+
+const FIELD_LABELS: Record<MissingFieldKey, string> = {
+  availableFrom: "入住日期",
+  subleaseEndDate: "转租结束日期",
+  parkingIncluded: "停车信息",
+  furnished: "家具/设施",
+  monthlyRent: "月租",
+};
+
+const CONFIDENCE_LABELS: Record<SkillResult["confidence"], string> = {
+  high: "高",
+  medium: "中",
+  low: "低",
+};
+
+function getMissingFieldKeys(items: string[]): Set<MissingFieldKey> {
+  const keys = new Set<MissingFieldKey>();
+
+  for (const item of items) {
+    const value = item.toLowerCase();
+
+    if (
+      value.includes("move-in") ||
+      value.includes("move in") ||
+      value.includes("available from") ||
+      value.includes("availability date") ||
+      value.includes("available date")
+    ) {
+      keys.add("availableFrom");
+    }
+
+    if (
+      value.includes("lease end") ||
+      value.includes("sublease end") ||
+      value.includes("end date")
+    ) {
+      keys.add("subleaseEndDate");
+    }
+
+    if (value.includes("parking")) {
+      keys.add("parkingIncluded");
+    }
+
+    if (value.includes("furnished") || value.includes("furnishing")) {
+      keys.add("furnished");
+    }
+
+    if (value.includes("price") || value.includes("rent") || value.includes("monthly rent")) {
+      keys.add("monthlyRent");
+    }
+  }
+
+  return keys;
+}
+
+function getMissingFieldKey(item: string): MissingFieldKey | null {
+  const keys = getMissingFieldKeys([item]);
+  return keys.values().next().value ?? null;
+}
+
+function looksLikeRawAiPayload(value: string): boolean {
+  const normalized = value.trim();
+  if (!normalized) return false;
+  if (/^```(?:json)?/i.test(normalized) || /^[{[]/.test(normalized)) return true;
+
+  const rawKeyMatches = normalized.match(
+    /["']?(summary|strengths|risks|recommendations|confidence)["']?\s*[:=]/gi
+  );
+  return (rawKeyMatches?.length ?? 0) >= 2;
+}
+
+function containsChineseText(value: string): boolean {
+  return /[\u3400-\u9fff]/.test(value);
+}
+
+function cleanReviewText(value: unknown): string {
+  if (typeof value !== "string") return "";
+  const trimmed = value.trim();
+  if (!trimmed || looksLikeRawAiPayload(trimmed)) return "";
+  if (!containsChineseText(trimmed)) return "";
+  return trimmed;
+}
+
+function cleanReviewList(values: string[] | undefined): string[] {
+  return (values ?? [])
+    .map(cleanReviewText)
+    .filter((value) => value.length > 0);
+}
+
+function formatMissingField(field: string): string {
+  const fieldKey = getMissingFieldKey(field);
+  return fieldKey ? FIELD_LABELS[fieldKey] : cleanReviewText(field);
+}
+
+function formatConfidenceLabel(confidence: SkillResult["confidence"]): string {
+  return CONFIDENCE_LABELS[confidence] ?? CONFIDENCE_LABELS.low;
+}
+
+function formatExtractionWarning(value: string): string {
+  const normalized = value.toLowerCase();
+  if (normalized.includes("truncated")) {
+    return "AI 返回内容不完整，已使用规则提取结果。请重点复核字段。";
+  }
+  if (normalized.includes("malformed json") || normalized.includes("invalid json")) {
+    return "AI 返回格式异常，已使用规则提取结果。请重点复核字段。";
+  }
+  if (normalized.includes("schema")) {
+    return "AI 返回字段不完整，已使用规则提取结果。请重点复核字段。";
+  }
+  if (normalized.includes("heuristic") || normalized.includes("gemini was unavailable")) {
+    return "AI 暂不可用，已使用规则提取结果。请重点复核字段。";
+  }
+  return "提取结果需要人工复核。";
+}
+
 // ── Main component ─────────────────────────────────────────────────────────
 
 export default function ImportListing() {
@@ -259,6 +450,15 @@ export default function ImportListing() {
   const [savedId, setSavedId] = useState<number | null>(null);
   const [isPublished, setIsPublished] = useState(false);
 
+  // ── AI skill analysis state ──────────────────────────────────────────────
+  const [listingAnalysis, setListingAnalysis] = useState<SkillAnalysis | null>(null);
+  const [listingAnalysisStatus, setListingAnalysisStatus] = useState<SkillStatus>("idle");
+  const [isListingSuggestionsOpen, setIsListingSuggestionsOpen] = useState(false);
+
+  const [subleaseAnalysis, setSubleaseAnalysis] = useState<SkillAnalysis | null>(null);
+  const [subleaseAnalysisStatus, setSubleaseAnalysisStatus] = useState<SkillStatus>("idle");
+  const [isSubleaseReviewOpen, setIsSubleaseReviewOpen] = useState(false);
+
   // ── Geocoding state ──────────────────────────────────────────────────────
   type GeocodeStatus = "idle" | "loading" | "found" | "not_found";
   const [geocodeStatus, setGeocodeStatus] = useState<GeocodeStatus>("idle");
@@ -269,12 +469,37 @@ export default function ImportListing() {
     nearbyUniversities: string[];
   } | null>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const fieldRefs = useRef<Partial<Record<MissingFieldKey, HTMLDivElement | null>>>(
+    {}
+  );
+  const hasTrackedSuggestionsShownRef = useRef(false);
+  const hasTrackedSubleaseReviewShownRef = useRef(false);
+  const usedTitleAssistRef = useRef(false);
+  const usedTagsAssistRef = useRef(false);
+  const usedJumpAssistRef = useRef(false);
+  const hasTrackedPublishAfterAiAssistRef = useRef(false);
 
   // ── Mutations ────────────────────────────────────────────────────────────
 
   const extractMutation = trpc.listings.extractFromWeChat.useMutation({
     onSuccess(data) {
+      const listingJson = JSON.stringify(data);
+      const shouldRunSubleaseReview = hasSubleaseSignal(data);
       const nextForm = applyExtracted(makeDefaultForm(), data);
+
+      setListingAnalysis(null);
+      setListingAnalysisStatus("loading");
+      setSubleaseAnalysis(null);
+      setSubleaseAnalysisStatus(shouldRunSubleaseReview ? "loading" : "idle");
+      setIsListingSuggestionsOpen(false);
+      setIsSubleaseReviewOpen(false);
+      hasTrackedSuggestionsShownRef.current = false;
+      hasTrackedSubleaseReviewShownRef.current = false;
+      usedTitleAssistRef.current = false;
+      usedTagsAssistRef.current = false;
+      usedJumpAssistRef.current = false;
+      hasTrackedPublishAfterAiAssistRef.current = false;
+
       setExtracted(data);
       setForm(nextForm);
       if (
@@ -296,6 +521,17 @@ export default function ImportListing() {
         setGeocodedData(null);
       }
       setStep("review");
+
+      listingQualityMutation.mutate({ listingJson });
+
+      if (shouldRunSubleaseReview) {
+        subleaseRiskMutation.mutate({
+          skillName: "sublease-risk-analyst",
+          question:
+            "请用简体中文审查这条已提取的转租房源，重点指出风险点、正面因素、建议下一步和缺失信息。输出内容面向 BridgeStay 管理员内部审核，不要面向公开用户。",
+          context: listingJson,
+        });
+      }
     },
     onError(err) {
       toast.error(err.message);
@@ -310,7 +546,7 @@ export default function ImportListing() {
         return;
       }
       setSavedId(data.id);
-      setIsPublished(data.status === "active");
+      setIsPublished(false);
       setStep("success");
     },
     onError(err) {
@@ -320,6 +556,19 @@ export default function ImportListing() {
 
   const publishMutation = trpc.apartments.publish.useMutation({
     onSuccess() {
+      const hasUsedAiAssist =
+        usedTitleAssistRef.current ||
+        usedTagsAssistRef.current ||
+        usedJumpAssistRef.current;
+
+      if (hasUsedAiAssist && !hasTrackedPublishAfterAiAssistRef.current) {
+        hasTrackedPublishAfterAiAssistRef.current = true;
+        trackEvent("import_listing_publish_after_ai_assist", {
+          usedTitleAssist: usedTitleAssistRef.current,
+          usedTagsAssist: usedTagsAssistRef.current,
+          usedJumpAssist: usedJumpAssistRef.current,
+        });
+      }
       setIsPublished(true);
       toast.success("Listing is now live!");
     },
@@ -348,6 +597,31 @@ export default function ImportListing() {
       setGeocodedData(null);
     },
   });
+
+  // ── AI skill analysis mutations ──────────────────────────────────────────
+  const listingQualityMutation = trpc.ai.analyzeListingQuality.useMutation({
+    onSuccess(data) {
+      setListingAnalysis(normalizeSkillAnalysis(data));
+      setListingAnalysisStatus("done");
+    },
+    onError() {
+      setListingAnalysisStatus("error");
+    },
+  });
+
+  const subleaseRiskMutation = trpc.ai.runSkillPerspective.useMutation({
+    onSuccess(data) {
+      setSubleaseAnalysis(normalizeSkillAnalysis(data));
+      setSubleaseAnalysisStatus("done");
+    },
+    onError() {
+      setSubleaseAnalysisStatus("error");
+    },
+  });
+
+  function reextractCandidate(chunk: string) {
+    extractMutation.mutate({ text: chunk });
+  }
 
   // ── Debounced geocoding — fires when address fields are complete ──────────
   useEffect(() => {
@@ -399,6 +673,18 @@ export default function ImportListing() {
       toast.error("Please paste listing text or upload a screenshot first");
       return;
     }
+    setListingAnalysis(null);
+    setListingAnalysisStatus("idle");
+    setSubleaseAnalysis(null);
+    setSubleaseAnalysisStatus("idle");
+    setIsListingSuggestionsOpen(false);
+    setIsSubleaseReviewOpen(false);
+    hasTrackedSuggestionsShownRef.current = false;
+    hasTrackedSubleaseReviewShownRef.current = false;
+    usedTitleAssistRef.current = false;
+    usedTagsAssistRef.current = false;
+    usedJumpAssistRef.current = false;
+    hasTrackedPublishAfterAiAssistRef.current = false;
     extractMutation.mutate({
       text: inputText.trim() || undefined,
       imageBase64: imageData?.base64,
@@ -408,6 +694,52 @@ export default function ImportListing() {
 
   const update = <K extends keyof FormState>(key: K, value: FormState[K]) =>
     setForm((prev) => ({ ...prev, [key]: value }));
+
+  function applySuggestedTitle() {
+    if (!listingSuggestedTitle) return;
+    usedTitleAssistRef.current = true;
+    update("title", listingSuggestedTitle);
+    trackEvent("import_listing_ai_apply_suggested_title", {
+      hasSuggestedTitle: true,
+    });
+    toast.success("Applied AI title suggestion");
+  }
+
+  function applySuggestedTags() {
+    if (listingSuggestedTags.length === 0) return;
+    usedTagsAssistRef.current = true;
+
+    const existingTags = splitCommaSeparated(form.amenitiesText);
+    const seen = new Set(existingTags.map((tag) => tag.toLowerCase()));
+    const mergedTags = [...existingTags];
+
+    for (const tag of listingSuggestedTags) {
+      const normalized = tag.trim();
+      if (!normalized) continue;
+      const key = normalized.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      mergedTags.push(normalized);
+    }
+
+    update("amenitiesText", mergedTags.join(", "));
+    trackEvent("import_listing_ai_apply_tags", {
+      suggestedTagCount: listingSuggestedTags.length,
+      mergedTagCount: mergedTags.length,
+    });
+    toast.success("Applied AI tags to amenities");
+  }
+
+  function jumpToField(field: MissingFieldKey) {
+    const element = fieldRefs.current[field];
+    if (!element) return;
+
+    usedJumpAssistRef.current = true;
+    trackEvent("import_listing_ai_jump_to_field", {
+      field,
+    });
+    element.scrollIntoView({ behavior: "smooth", block: "center" });
+  }
 
   function handleSave() {
     // Client-side validation matching server schema requirements
@@ -498,6 +830,18 @@ export default function ImportListing() {
     setImageName("");
     setSavedId(null);
     setIsPublished(false);
+    setListingAnalysis(null);
+    setListingAnalysisStatus("idle");
+    setSubleaseAnalysis(null);
+    setSubleaseAnalysisStatus("idle");
+    setIsListingSuggestionsOpen(false);
+    setIsSubleaseReviewOpen(false);
+    hasTrackedSuggestionsShownRef.current = false;
+    hasTrackedSubleaseReviewShownRef.current = false;
+    usedTitleAssistRef.current = false;
+    usedTagsAssistRef.current = false;
+    usedJumpAssistRef.current = false;
+    hasTrackedPublishAfterAiAssistRef.current = false;
     setGeocodeStatus("idle");
     setGeocodedData(null);
     if (fileInputRef.current) fileInputRef.current.value = "";
@@ -511,6 +855,76 @@ export default function ImportListing() {
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
+
+  const rawListingSuggestedTitle = listingAnalysis?.result.extra?.suggestedTitle;
+  const rawListingMissingFields = listingAnalysis?.result.extra?.missingFields;
+  const rawListingSuggestedTags = listingAnalysis?.result.extra?.suggestedTags;
+  const listingSuggestedTitle =
+    typeof rawListingSuggestedTitle === "string" ? rawListingSuggestedTitle : "";
+  const listingMissingFields = Array.isArray(rawListingMissingFields)
+    ? rawListingMissingFields.map(String)
+    : [];
+  const listingSuggestedTags = Array.isArray(rawListingSuggestedTags)
+    ? rawListingSuggestedTags.map(cleanReviewText).filter(Boolean)
+    : [];
+  const aiMissingFieldKeys = getMissingFieldKeys(listingMissingFields);
+  const listingParseFailed = listingAnalysis?.result.extra?.parseFailed === true;
+  const listingSummary = listingParseFailed
+    ? ""
+    : cleanReviewText(listingAnalysis?.result.summary);
+  const listingStrengths = cleanReviewList(listingAnalysis?.result.strengths);
+  const listingRisks = cleanReviewList(listingAnalysis?.result.risks);
+  const listingRecommendations = cleanReviewList(listingAnalysis?.result.recommendations);
+  const listingMissingFieldItems = listingMissingFields
+    .map((field) => ({
+      label: formatMissingField(field),
+      fieldKey: getMissingFieldKey(field),
+    }))
+    .filter((item) => item.label.length > 0);
+  const subleaseParseFailed = subleaseAnalysis?.result.extra?.parseFailed === true;
+  const subleaseSummary = subleaseParseFailed
+    ? ""
+    : cleanReviewText(subleaseAnalysis?.result.summary);
+  const subleaseStrengths = cleanReviewList(subleaseAnalysis?.result.strengths);
+  const subleaseRisks = cleanReviewList(subleaseAnalysis?.result.risks);
+  const subleaseRecommendations = cleanReviewList(subleaseAnalysis?.result.recommendations);
+  const hasMeaningfulListingSuggestions = Boolean(
+      listingSummary ||
+      listingSuggestedTitle ||
+      listingMissingFieldItems.length ||
+      listingRisks.length ||
+      listingStrengths.length ||
+      listingSuggestedTags.length ||
+      listingRecommendations.length ||
+      listingParseFailed
+  );
+  const shouldShowSubleaseReview =
+    !!extracted && hasSubleaseSignal(extracted) && subleaseAnalysisStatus !== "idle";
+  const highlightedFieldClasses =
+    "rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2";
+  const highlightedToggleClasses =
+    "flex items-center justify-between rounded-lg border border-amber-500/30 bg-amber-500/5 px-3 py-2";
+
+  useEffect(() => {
+    if (step !== "review" || listingAnalysisStatus === "idle") return;
+    if (hasTrackedSuggestionsShownRef.current) return;
+
+    hasTrackedSuggestionsShownRef.current = true;
+    trackEvent("import_listing_ai_suggestions_shown", {
+      status: listingAnalysisStatus,
+      isSublease: extracted ? hasSubleaseSignal(extracted) : false,
+    });
+  }, [step, listingAnalysisStatus, extracted]);
+
+  useEffect(() => {
+    if (step !== "review" || !shouldShowSubleaseReview) return;
+    if (hasTrackedSubleaseReviewShownRef.current) return;
+
+    hasTrackedSubleaseReviewShownRef.current = true;
+    trackEvent("import_listing_ai_sublease_review_shown", {
+      status: subleaseAnalysisStatus,
+    });
+  }, [step, shouldShowSubleaseReview, subleaseAnalysisStatus]);
 
   return (
     <div className="min-h-screen bg-background">
@@ -651,25 +1065,441 @@ export default function ImportListing() {
             {(() => {
               const cfg = CONFIDENCE[extracted.confidence];
               const Icon = cfg.Icon;
+              const reviewNotes = [
+                extracted.multipleListingCandidatesDetected
+                  ? extracted.extractedFromBestCandidateChunk
+                    ? "检测到多条房源，已提取信息最完整的一条"
+                    : "检测到多条房源，请仔细复核"
+                  : null,
+                extracted.conflictingAddressesDetected
+                  ? "检测到地址冲突，请核对当前地址"
+                  : null,
+                extracted.duplicateContentRemoved
+                  ? "已移除重复文本"
+                  : null,
+              ].filter(Boolean) as string[];
               return (
-                <div
-                  className={`flex items-center gap-3 px-4 py-3 rounded-lg border ${cfg.classes}`}
-                >
-                  <Icon className="w-4 h-4 flex-shrink-0" />
-                  <span className="text-sm font-medium">{cfg.label}</span>
-                  {extracted.extractionWarning && (
-                    <span className="text-xs font-medium rounded-full border border-amber-500/30 bg-amber-500/15 px-2 py-1 text-amber-700 dark:text-amber-300">
-                      {extracted.extractionWarning}
-                    </span>
+                <div className={`px-4 py-3 rounded-lg border ${cfg.classes}`}>
+                  <div className="flex items-center gap-3">
+                    <Icon className="w-4 h-4 flex-shrink-0" />
+                    <span className="text-sm font-medium">{cfg.label}</span>
+                    {extracted.extractionWarning && (
+                      <span className="text-xs font-medium rounded-full border border-amber-500/30 bg-amber-500/15 px-2 py-1 text-amber-700 dark:text-amber-300">
+                        {formatExtractionWarning(extracted.extractionWarning)}
+                      </span>
+                    )}
+                    {extracted.wechatContact && (
+                      <span className="ml-auto text-xs opacity-75 flex-shrink-0">
+                        WeChat: {extracted.wechatContact}
+                      </span>
+                    )}
+                  </div>
+                  {reviewNotes.length > 0 && (
+                    <div className="mt-3 flex flex-wrap gap-2">
+                      {reviewNotes.map((note) => (
+                        <span
+                          key={note}
+                          className="text-xs font-medium rounded-full border border-current/20 bg-background/50 px-2 py-1"
+                        >
+                          {note}
+                        </span>
+                      ))}
+                    </div>
                   )}
-                  {extracted.wechatContact && (
-                    <span className="ml-auto text-xs opacity-75 flex-shrink-0">
-                      WeChat: {extracted.wechatContact}
-                    </span>
+                  {extracted.extractedFromBestCandidateChunk && (
+                    <p className="mt-2 text-xs opacity-75">
+                      AI 已根据租金、地址和文本结构选择最完整的候选房源。
+                    </p>
                   )}
+                  {extracted.multipleListingCandidatesDetected &&
+                    (extracted.truncatedPreviewOfOtherChunks?.length ?? 0) > 0 && (
+                      <details className="mt-3 text-xs">
+                        <summary className="cursor-pointer font-medium opacity-90">
+                          粘贴内容中还检测到其他房源
+                          {typeof extracted.candidateChunkCount === "number"
+                            ? `（${extracted.candidateChunkCount} 个候选）`
+                            : ""}
+                        </summary>
+                        <div className="mt-2 space-y-2">
+                          {extracted.truncatedPreviewOfOtherChunks!.map((preview, index) => (
+                            <div
+                              key={`${index}-${preview}`}
+                              className="rounded-md border border-current/15 bg-background/40 px-3 py-2 leading-relaxed opacity-90"
+                            >
+                              <div>{preview}</div>
+                              {extracted.otherCandidateChunks?.[index] && (
+                                <Button
+                                  type="button"
+                                  variant="outline"
+                                  size="sm"
+                                  className="mt-2 h-7 text-[11px]"
+                                  onClick={() => reextractCandidate(extracted.otherCandidateChunks![index])}
+                                  disabled={extractMutation.isPending}
+                                >
+                                  {extractMutation.isPending ? (
+                                    <>
+                                      <Loader2 className="mr-1 h-3 w-3 animate-spin" />
+                                      正在重新提取...
+                                    </>
+                                  ) : (
+                                    "使用这条房源"
+                                  )}
+                                </Button>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </details>
+                    )}
                 </div>
               );
             })()}
+
+            {/* ── AI Listing Suggestions ──────────────────────────────── */}
+            {listingAnalysisStatus !== "idle" && (
+              <Collapsible open={isListingSuggestionsOpen} onOpenChange={setIsListingSuggestionsOpen}>
+                <Card className="border-blue-500/30 bg-blue-500/5">
+                  <CardHeader className="pb-2">
+                    <CollapsibleTrigger asChild>
+                      <button
+                        type="button"
+                        className="flex w-full items-center justify-between gap-3 text-left"
+                      >
+                        <CardTitle className="flex items-center gap-2 text-base">
+                          <Sparkles className="w-4 h-4 text-blue-500" />
+                          AI 审核建议
+                          {listingAnalysisStatus === "loading" && (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin text-blue-500" />
+                          )}
+                        </CardTitle>
+                        <ChevronDown
+                          className={`w-4 h-4 text-muted-foreground transition-transform ${
+                            isListingSuggestionsOpen ? "rotate-180" : ""
+                          }`}
+                        />
+                      </button>
+                    </CollapsibleTrigger>
+                  </CardHeader>
+                  <CollapsibleContent asChild>
+                    <CardContent className="space-y-4">
+                      {listingAnalysisStatus === "loading" && (
+                        <p className="text-sm text-muted-foreground">
+                          正在生成中文审核建议...
+                        </p>
+                      )}
+
+                      {listingAnalysisStatus === "error" && (
+                        <div className="rounded-md border border-dashed border-blue-500/25 bg-background/70 px-3 py-3 text-sm text-muted-foreground">
+                          未能完成 AI 审核。你仍然可以继续复核、编辑并保存房源。
+                        </div>
+                      )}
+
+                      {listingAnalysisStatus === "done" && listingAnalysis && (
+                        <>
+                          {hasMeaningfulListingSuggestions ? (
+                            <>
+                              {listingSummary && (
+                                <p className="text-sm text-muted-foreground">
+                                  {listingSummary}
+                                </p>
+                              )}
+
+                              {listingParseFailed && (
+                                <div className="flex items-center gap-2 rounded-md border border-dashed border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-600 dark:text-amber-400">
+                                  <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" />
+                                  AI 返回了部分结果，详细建议可能不完整。
+                                </div>
+                              )}
+
+                              <div className="space-y-2 rounded-md border border-blue-500/20 bg-background/80 px-3 py-3">
+                                <div className="flex items-start gap-2">
+                                  <Lightbulb className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-blue-500" />
+                                  <div className="min-w-0 text-sm">
+                                    <p className="font-medium text-foreground">建议标题</p>
+                                    {listingSuggestedTitle ? (
+                                      <div className="mt-1 flex flex-wrap items-center gap-2">
+                                        <span className="text-muted-foreground">{listingSuggestedTitle}</span>
+                                        <Button
+                                          type="button"
+                                          variant="ghost"
+                                          size="sm"
+                                          className="h-6 px-2 text-xs"
+                                          onClick={applySuggestedTitle}
+                                        >
+                                          应用
+                                        </Button>
+                                      </div>
+                                    ) : (
+                                      <p className="mt-1 text-muted-foreground">
+                                        暂无更好的标题建议。
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="space-y-2 rounded-md border border-green-500/20 bg-background/80 px-3 py-3">
+                                <div className="flex items-start gap-2">
+                                  <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-green-500" />
+                                  <div className="text-sm">
+                                    <p className="font-medium text-foreground">正面因素</p>
+                                    {listingStrengths.length > 0 ? (
+                                      <ul className="mt-1 ml-5 list-disc space-y-1 text-muted-foreground">
+                                        {listingStrengths.map((strength) => (
+                                          <li key={strength}>{strength}</li>
+                                        ))}
+                                      </ul>
+                                    ) : (
+                                      <p className="mt-1 text-muted-foreground">
+                                        暂无明确的正面因素总结。
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="space-y-2 rounded-md border border-amber-500/20 bg-background/80 px-3 py-3">
+                                <div className="flex items-start gap-2">
+                                  <AlertCircle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-amber-500" />
+                                  <div className="text-sm">
+                                    <p className="font-medium text-foreground">缺失信息</p>
+                                    {listingMissingFieldItems.length > 0 ? (
+                                      <ul className="mt-1 ml-5 list-disc space-y-1 text-muted-foreground">
+                                        {listingMissingFieldItems.map(({ label, fieldKey }) => {
+                                          return (
+                                            <li key={label}>
+                                              <span>{label}</span>
+                                              {fieldKey && (
+                                                <Button
+                                                  type="button"
+                                                  variant="link"
+                                                  size="sm"
+                                                  className="ml-2 h-auto px-0 text-xs"
+                                                  onClick={() => jumpToField(fieldKey)}
+                                                  title={`跳转到${FIELD_LABELS[fieldKey]}`}
+                                                >
+                                                  跳转到字段
+                                                </Button>
+                                              )}
+                                            </li>
+                                          );
+                                        })}
+                                      </ul>
+                                    ) : (
+                                      <p className="mt-1 text-muted-foreground">
+                                        暂无明显缺失字段。
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="space-y-2 rounded-md border border-red-500/20 bg-background/80 px-3 py-3">
+                                <div className="flex items-start gap-2">
+                                  <ShieldAlert className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-red-500" />
+                                  <div className="text-sm">
+                                    <p className="font-medium text-foreground">风险点</p>
+                                    {listingRisks.length > 0 ? (
+                                      <ul className="mt-1 ml-5 list-disc space-y-1 text-muted-foreground">
+                                        {listingRisks.map((risk) => (
+                                          <li key={risk}>{risk}</li>
+                                        ))}
+                                      </ul>
+                                    ) : (
+                                      <p className="mt-1 text-muted-foreground">
+                                        暂未发现明确风险点。
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+
+                              <div className="space-y-2 rounded-md border border-violet-500/20 bg-background/80 px-3 py-3">
+                                <div className="flex items-start gap-2">
+                                  <Tag className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-violet-500" />
+                                  <div className="text-sm">
+                                    <p className="font-medium text-foreground">建议标签</p>
+                                    {listingSuggestedTags.length > 0 ? (
+                                      <div className="mt-2 space-y-2">
+                                        <div className="flex flex-wrap gap-1.5">
+                                          {listingSuggestedTags.map((tag) => (
+                                            <Badge key={tag} variant="secondary" className="text-xs">
+                                              {tag}
+                                            </Badge>
+                                          ))}
+                                        </div>
+                                        <Button
+                                          type="button"
+                                          variant="ghost"
+                                          size="sm"
+                                          className="h-6 px-2 text-xs"
+                                          onClick={applySuggestedTags}
+                                        >
+                                          应用标签
+                                        </Button>
+                                      </div>
+                                    ) : (
+                                      <p className="mt-1 text-muted-foreground">
+                                        暂无标签建议。
+                                      </p>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+
+                              {listingRecommendations.length > 0 && (
+                                <div className="space-y-2 rounded-md border border-blue-500/20 bg-background/80 px-3 py-3">
+                                  <div className="flex items-start gap-2">
+                                    <Lightbulb className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-blue-500" />
+                                    <div className="text-sm">
+                                      <p className="font-medium text-foreground">建议下一步</p>
+                                      <ul className="mt-1 ml-5 list-disc space-y-1 text-muted-foreground">
+                                        {listingRecommendations.map((recommendation) => (
+                                          <li key={recommendation}>{recommendation}</li>
+                                        ))}
+                                      </ul>
+                                    </div>
+                                  </div>
+                                </div>
+                              )}
+
+                              <p className="text-xs text-muted-foreground">
+                                置信度：{formatConfidenceLabel(listingAnalysis.result.confidence)}
+                              </p>
+                            </>
+                          ) : (
+                            <div className="rounded-md border border-dashed border-blue-500/25 bg-background/70 px-3 py-3 text-sm text-muted-foreground">
+                              AI 审核已完成，但没有返回明确的房源优化建议。
+                            </div>
+                          )}
+                        </>
+                      )}
+                    </CardContent>
+                  </CollapsibleContent>
+                </Card>
+              </Collapsible>
+            )}
+
+            {/* ── Sublease Risk Review ──────────────────────────────────── */}
+            {shouldShowSubleaseReview && (
+              <Collapsible open={isSubleaseReviewOpen} onOpenChange={setIsSubleaseReviewOpen}>
+                <Card className="border-amber-500/30 bg-amber-500/5">
+                  <CardHeader className="pb-2">
+                    <CollapsibleTrigger asChild>
+                      <button
+                        type="button"
+                        className="flex w-full items-center justify-between gap-3 text-left"
+                      >
+                        <CardTitle className="flex items-center gap-2 text-base">
+                          <ShieldAlert className="w-4 h-4 text-amber-500" />
+                          转租风险审核
+                          {subleaseAnalysisStatus === "loading" && (
+                            <Loader2 className="w-3.5 h-3.5 animate-spin text-amber-500" />
+                          )}
+                        </CardTitle>
+                        <ChevronDown
+                          className={`w-4 h-4 text-muted-foreground transition-transform ${
+                            isSubleaseReviewOpen ? "rotate-180" : ""
+                          }`}
+                        />
+                      </button>
+                    </CollapsibleTrigger>
+                  </CardHeader>
+                  <CollapsibleContent asChild>
+                    <CardContent className="space-y-4">
+                      {subleaseAnalysisStatus === "loading" && (
+                        <p className="text-sm text-muted-foreground">
+                          正在审核转租风险点...
+                        </p>
+                      )}
+
+                      {subleaseAnalysisStatus === "error" && (
+                        <div className="rounded-md border border-dashed border-amber-500/25 bg-background/70 px-3 py-3 text-sm text-muted-foreground">
+                          未能完成转租风险审核。你仍然可以继续复核、编辑并保存房源。
+                        </div>
+                      )}
+
+                      {subleaseAnalysisStatus === "done" && subleaseAnalysis && (
+                        <>
+                          {subleaseSummary ? (
+                            <p className="text-sm text-muted-foreground">
+                              {subleaseSummary}
+                            </p>
+                          ) : (
+                            <p className="text-sm text-muted-foreground">
+                              转租审核已完成。
+                            </p>
+                          )}
+
+                          {subleaseParseFailed && (
+                            <div className="flex items-center gap-2 rounded-md border border-dashed border-amber-500/30 bg-amber-500/5 px-3 py-2 text-xs text-amber-600 dark:text-amber-400">
+                              <AlertCircle className="h-3.5 w-3.5 flex-shrink-0" />
+                              AI 返回了部分结果，风险细节可能不完整。
+                            </div>
+                          )}
+
+                          <div className="space-y-2 rounded-md border border-red-500/20 bg-background/80 px-3 py-3">
+                            <div className="flex items-start gap-2">
+                              <AlertCircle className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-red-500" />
+                              <div className="text-sm">
+                                <p className="font-medium text-foreground">风险点</p>
+                                {subleaseRisks.length > 0 ? (
+                                  <ul className="mt-1 ml-5 list-disc space-y-1 text-muted-foreground">
+                                    {subleaseRisks.map((risk) => (
+                                      <li key={risk}>{risk}</li>
+                                    ))}
+                                  </ul>
+                                ) : (
+                                  <p className="mt-1 text-muted-foreground">
+                                    暂未发现明确转租风险点。
+                                  </p>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+
+                          {subleaseStrengths.length > 0 && (
+                            <div className="space-y-2 rounded-md border border-green-500/20 bg-background/80 px-3 py-3">
+                              <div className="flex items-start gap-2">
+                                <CheckCircle2 className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-green-500" />
+                                <div className="text-sm">
+                                  <p className="font-medium text-foreground">正面因素</p>
+                                  <ul className="mt-1 ml-5 list-disc space-y-1 text-muted-foreground">
+                                    {subleaseStrengths.map((strength) => (
+                                      <li key={strength}>{strength}</li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          {subleaseRecommendations.length > 0 && (
+                            <div className="space-y-2 rounded-md border border-amber-500/20 bg-background/80 px-3 py-3">
+                              <div className="flex items-start gap-2">
+                                <Lightbulb className="mt-0.5 h-3.5 w-3.5 flex-shrink-0 text-amber-500" />
+                                <div className="text-sm">
+                                  <p className="font-medium text-foreground">建议下一步</p>
+                                  <ul className="mt-1 ml-5 list-disc space-y-1 text-muted-foreground">
+                                    {subleaseRecommendations.map((recommendation) => (
+                                      <li key={recommendation}>{recommendation}</li>
+                                    ))}
+                                  </ul>
+                                </div>
+                              </div>
+                            </div>
+                          )}
+
+                          <p className="text-xs text-muted-foreground">
+                            置信度：{formatConfidenceLabel(subleaseAnalysis.result.confidence)}
+                          </p>
+                        </>
+                      )}
+                    </CardContent>
+                  </CollapsibleContent>
+                </Card>
+              </Collapsible>
+            )}
 
             {/* Basic Info */}
             <Card>
@@ -873,10 +1703,24 @@ export default function ImportListing() {
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
+                  <div
+                    ref={(node) => {
+                      fieldRefs.current.monthlyRent = node;
+                    }}
+                    className={
+                      aiMissingFieldKeys.has("monthlyRent")
+                        ? highlightedFieldClasses
+                        : "space-y-1.5"
+                    }
+                  >
                     <Label>
                       Monthly Rent (USD){" "}
                       <span className="text-destructive">*</span>
+                      {aiMissingFieldKeys.has("monthlyRent") && (
+                        <span className="ml-2 text-[11px] font-medium text-amber-700 dark:text-amber-300">
+                          AI 建议
+                        </span>
+                      )}
                     </Label>
                     <Input
                       type="number"
@@ -900,9 +1744,23 @@ export default function ImportListing() {
                   </div>
                 </div>
 
-                <div className="space-y-1.5">
+                <div
+                  ref={(node) => {
+                    fieldRefs.current.availableFrom = node;
+                  }}
+                  className={
+                    aiMissingFieldKeys.has("availableFrom")
+                      ? highlightedFieldClasses
+                      : "space-y-1.5"
+                  }
+                >
                   <Label>
                     Available From <span className="text-destructive">*</span>
+                    {aiMissingFieldKeys.has("availableFrom") && (
+                      <span className="ml-2 text-[11px] font-medium text-amber-700 dark:text-amber-300">
+                        AI 建议
+                      </span>
+                    )}
                   </Label>
                   <Input
                     type="date"
@@ -972,26 +1830,61 @@ export default function ImportListing() {
 
                 <Separator />
 
-                <div className="flex items-center justify-between py-1">
-                  <Label className="cursor-pointer">Parking Included</Label>
+                <div
+                  ref={(node) => {
+                    fieldRefs.current.parkingIncluded = node;
+                  }}
+                  className={
+                    aiMissingFieldKeys.has("parkingIncluded")
+                      ? highlightedToggleClasses
+                      : "flex items-center justify-between py-1"
+                  }
+                >
+                  <Label className="cursor-pointer">
+                    Parking Included
+                    {aiMissingFieldKeys.has("parkingIncluded") && (
+                      <span className="ml-2 text-[11px] font-medium text-amber-700 dark:text-amber-300">
+                        AI 建议
+                      </span>
+                    )}
+                  </Label>
                   <Switch
                     checked={form.parkingIncluded}
                     onCheckedChange={(v) => update("parkingIncluded", v)}
                   />
                 </div>
 
-                <div className="space-y-1.5">
+                <div
+                  ref={(node) => {
+                    fieldRefs.current.furnished = node;
+                  }}
+                  className={
+                    aiMissingFieldKeys.has("furnished")
+                      ? highlightedFieldClasses
+                      : "space-y-1.5"
+                  }
+                >
                   <Label>
                     Amenities{" "}
                     <span className="text-muted-foreground text-xs">
                       (comma-separated)
                     </span>
+                    {aiMissingFieldKeys.has("furnished") && (
+                      <span className="ml-2 text-[11px] font-medium text-amber-700 dark:text-amber-300">
+                        AI 建议
+                      </span>
+                    )}
                   </Label>
                   <Input
                     value={form.amenitiesText}
                     onChange={(e) => update("amenitiesText", e.target.value)}
                     placeholder="In-unit Laundry, Gym, Pool, Dishwasher…"
                   />
+                  {aiMissingFieldKeys.has("furnished") && (
+                    <p className="text-xs text-amber-700 dark:text-amber-300">
+                      如果该房源带家具，请在这里补充“Furnished”。
+                    </p>
+                  )}
                 </div>
 
                 <div className="space-y-1.5">
@@ -1038,8 +1931,24 @@ export default function ImportListing() {
                   <>
                     <Separator />
                     <div className="grid grid-cols-2 gap-3">
-                      <div className="space-y-1.5">
-                        <Label>Sublease Ends On</Label>
+                      <div
+                        ref={(node) => {
+                          fieldRefs.current.subleaseEndDate = node;
+                        }}
+                        className={
+                          aiMissingFieldKeys.has("subleaseEndDate")
+                            ? highlightedFieldClasses
+                            : "space-y-1.5"
+                        }
+                      >
+                        <Label>
+                          Sublease Ends On
+                          {aiMissingFieldKeys.has("subleaseEndDate") && (
+                            <span className="ml-2 text-[11px] font-medium text-amber-700 dark:text-amber-300">
+                              AI 建议
+                            </span>
+                          )}
+                        </Label>
                         <Input
                           type="date"
                           value={form.subleaseEndDate}
