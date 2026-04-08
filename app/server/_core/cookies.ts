@@ -38,11 +38,12 @@ export function getSessionCookieOptions(
   //     : shouldSetDomain
   //       ? hostname
   //       : undefined;
-
+  const useCrossSiteSecureCookie =
+    process.env.NODE_ENV === "production" || isSecureRequest(req);
   return {
     httpOnly: true,
     path: "/",
-    sameSite: "none",
-    secure: isSecureRequest(req),
+    sameSite: useCrossSiteSecureCookie ? "none" : "lax",
+    secure: useCrossSiteSecureCookie,
   };
 }

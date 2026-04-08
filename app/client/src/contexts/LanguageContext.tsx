@@ -21,6 +21,7 @@ const translations: Record<string, Record<Language, string>> = {
   "nav.adminLogin": { cn: "管理员登录", en: "Admin Login" },
   "nav.language": { cn: "切换语言", en: "Language" },
   "nav.dashboard": { cn: "控制台", en: "Dashboard" },
+  "nav.signIn": { cn: "登录", en: "Sign In" },
   "nav.signOut": { cn: "退出登录", en: "Sign Out" },
   
   // Hero Section

@@ -1,7 +1,7 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { motion, AnimatePresence } from "framer-motion";
-import { Menu, X, Home, Search, FileText, User, LogOut, Globe, Settings } from "lucide-react";
+import { Menu, X, Home, Search, FileText, User, LogOut, Globe, Settings, LogIn } from "lucide-react";
 import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { BridgeStayLogo } from "./BridgeStayLogo";
@@ -112,7 +112,34 @@ export function Navbar() {
                   </Button>
                 </Link>
               </div>
-            ) : null}
+            ) : isAuthenticated ? (
+              <div className="flex items-center gap-2">
+                <Link href="/dashboard">
+                  <Button variant="ghost" className="h-11 px-4 rounded-full text-[15px] font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100">
+                    <User className="w-4 h-4 mr-1.5" />
+                    {t("nav.dashboard")}
+                  </Button>
+                </Link>
+                <Button
+                  variant="ghost"
+                  className="h-11 px-4 rounded-full text-[15px] font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100"
+                  onClick={handleLogout}
+                >
+                  <LogOut className="w-4 h-4 mr-1.5" />
+                  {t("nav.signOut")}
+                </Button>
+              </div>
+            ) : (
+              <Button
+                className="flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-orange-500 text-white text-sm font-medium hover:bg-orange-600 transition-colors"
+                onClick={() => {
+                  window.location.href = "/api/oauth/login";
+                }}
+              >
+                <LogIn className="w-4 h-4" />
+                {t("nav.signIn")}
+              </Button>
+            )}
           </div>
 
           {/* Mobile Menu Button */}
@@ -228,7 +255,19 @@ export function Navbar() {
                     {t("nav.signOut")}
                   </motion.div>
                 </>
-              ) : null}
+              ) : (
+                <motion.div
+                  className="flex items-center gap-4 px-5 py-4 rounded-2xl bg-orange-500 text-[15px] font-medium text-white hover:bg-orange-600 cursor-pointer transition-colors"
+                  onClick={() => {
+                    setIsMobileMenuOpen(false);
+                    window.location.href = "/api/oauth/login";
+                  }}
+                  whileTap={{ scale: 0.98 }}
+                >
+                  <LogIn className="w-5 h-5" />
+                  {t("nav.signIn")}
+                </motion.div>
+              )}
             </div>
           </motion.div>
         )}

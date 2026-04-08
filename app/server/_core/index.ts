@@ -34,8 +34,9 @@ function getMissingProductionEnv() {
   return [
     !ENV.databaseUrl && "DATABASE_URL",
     !ENV.cookieSecret && "JWT_SECRET",
-    !ENV.appId && "VITE_APP_ID",
-    !ENV.oAuthServerUrl && "OAUTH_SERVER_URL",
+    !ENV.googleClientId && "GOOGLE_CLIENT_ID",
+    !ENV.googleClientSecret && "GOOGLE_CLIENT_SECRET",
+    !ENV.appUrl && "APP_URL",
     !ENV.ownerOpenId && "OWNER_OPEN_ID",
   ].filter(Boolean);
 }
@@ -59,6 +60,12 @@ async function startServer() {
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
+
+  // Health check — must be before tRPC and static middleware
+  app.get("/healthz", (_req, res) => {
+    res.json({ status: "ok", ts: Date.now() });
+  });
+
   // OAuth callback under /api/oauth/callback
   registerOAuthRoutes(app);
   // tRPC API

@@ -1,0 +1,50 @@
+services:
+  - type: web
+    name: bridgestay
+    rootDir: app
+    runtime: node
+    nodeVersion: "22"
+    buildCommand: corepack enable && pnpm install --frozen-lockfile && pnpm build
+    startCommand: pnpm start
+    healthCheckPath: /healthz
+
+    envVars:
+      # ── Hardcoded (never override) ──────────────────────────────────────
+      - key: DEV_DEMO_MODE
+        value: "false"
+
+      # ── Required — Render will prompt for values ─────────────────────────
+      - key: NODE_ENV
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: GOOGLE_CLIENT_SECRET
+        sync: false
+      - key: APP_URL
+        sync: false
+      - key: OWNER_OPEN_ID
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+
+      # ── Optional — Render will prompt; leave blank to disable feature ────
+      - key: PORT
+        sync: false
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: VITE_GOOGLE_MAPS_API_KEY
+        sync: false
+      - key: VITE_ANALYTICS_ENDPOINT
+        sync: false
+      - key: VITE_ANALYTICS_WEBSITE_ID
+        sync: false
+      - key: VITE_SUPABASE_URL
+        sync: false
+      - key: VITE_SUPABASE_ANON_KEY
+        sync: false
