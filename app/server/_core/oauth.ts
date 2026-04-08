@@ -13,6 +13,7 @@ const OAUTH_STATE_MAX_AGE_MS = 5 * 60 * 1000;
 const GOOGLE_AUTH_URL = "https://accounts.google.com/o/oauth2/v2/auth";
 const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
 const GOOGLE_USERINFO_URL = "https://www.googleapis.com/oauth2/v3/userinfo";
+const IS_PRODUCTION = process.env.NODE_ENV === "production";
 
 type GoogleTokenResponse = {
   access_token: string;
@@ -63,7 +64,7 @@ function clearOAuthStateCookie(req: Request, res: Response) {
   res.clearCookie(OAUTH_STATE_COOKIE, {
     httpOnly: true,
     sameSite: "lax",
-    secure: false,
+    secure: IS_PRODUCTION,
     path: "/",
   });
 }
@@ -84,7 +85,7 @@ export function registerOAuthRoutes(app: Express) {
     res.cookie(OAUTH_STATE_COOKIE, state, {
       httpOnly: true,
       sameSite: "lax",
-      secure: false,
+      secure: IS_PRODUCTION,
       path: "/",
       maxAge: OAUTH_STATE_MAX_AGE_MS,
     });
@@ -177,7 +178,8 @@ export function registerOAuthRoutes(app: Express) {
 
       res.redirect(302, "/");
     } catch (error) {
-      console.error("[OAuth] Callback failed", error);
+      const errMsg = error instanceof Error ? error.message : String(error);
+      console.error("[OAuth] Callback failed:", errMsg, error);
       res.status(500).json({ error: "OAuth callback failed" });
     }
   });
