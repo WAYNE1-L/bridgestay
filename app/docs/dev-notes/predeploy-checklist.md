@@ -1,6 +1,6 @@
 # BridgeStay — Pre-Deploy Checklist
 
-> **Target environment:** Render · Node 22 · MySQL (PlanetScale or compatible)
+> **Target environment:** Render · Node 22 · PostgreSQL
 > Generated: 2026-04-08
 
 ---
@@ -10,11 +10,11 @@
 Set all of these in the Render dashboard (Environment → Add Environment Variable) before first deploy.
 
 - [ ] `NODE_ENV` = `production`
-- [ ] `DATABASE_URL` — MySQL connection string (`mysql://user:pass@host:port/dbname`)
+- [ ] `DATABASE_URL` — PostgreSQL connection string (`postgres://user:pass@host:port/dbname`)
 - [ ] `JWT_SECRET` — long random string (≥ 32 chars); used for session cookie signing
-- [ ] `OAUTH_SERVER_URL` — Manus OAuth server base URL
-- [ ] `VITE_APP_ID` — OAuth app ID registered with the OAuth provider
-- [ ] `VITE_OAUTH_PORTAL_URL` — OAuth portal URL (login redirect target)
+- [ ] `GOOGLE_CLIENT_ID` — Google OAuth client ID
+- [ ] `GOOGLE_CLIENT_SECRET` — Google OAuth client secret
+- [ ] `APP_URL` — public app base URL
 - [ ] `OWNER_OPEN_ID` — first admin user's `openId` (see bootstrap step §5 below)
 - [ ] `GEMINI_API_KEY` — Google AI Studio key for the AI import feature
 
@@ -26,42 +26,27 @@ Set all of these in the Render dashboard (Environment → Add Environment Variab
 - [ ] `VITE_GOOGLE_MAPS_API_KEY` — required for map views
 - [ ] `VITE_ANALYTICS_ENDPOINT` — analytics ingest URL
 - [ ] `VITE_ANALYTICS_WEBSITE_ID` — analytics site ID
-- [ ] `VITE_SUPABASE_URL` — Supabase project URL (if using Supabase storage)
-- [ ] `VITE_SUPABASE_ANON_KEY` — Supabase anon key
 
 ### Hardcoded in render.yaml (do not override)
 
-- `DEV_DEMO_MODE` = `false` — enforced at the service level; overriding to `true` would bypass OAuth in production
+- `DEV_DEMO_MODE` = `false` — enforced at the service level for production deployments
 
 ---
 
 ## 2. Database Migration
 
-Run migrations against the production database **before** starting the service.
+Generate and review migrations against the PostgreSQL schema before applying them to a real database.
 The migration runner reads `DATABASE_URL` from the environment.
 
 ```bash
 # Set production DATABASE_URL in your shell first:
-export DATABASE_URL="mysql://user:pass@host:port/bridgestay"
+export DATABASE_URL="postgres://user:pass@host:port/bridgestay"
 
 cd app
-pnpm db:migrate
+pnpm db:generate
 ```
 
-> ⚠️ **Migration gap — human decision required before running:**
->
-> The drizzle journal tracks migrations through **`0004_nervous_psynapse`** (idx 4).
-> Two SQL files exist in `drizzle/` that are **not recorded in the journal**:
->
-> | File | In journal? | Note |
-> |------|-------------|------|
-> | `0004_phase3_sublease.sql` | ❌ No | **idx collision** — journal already has a different `0004_*` entry |
-> | `0005_admin_listing_workflow.sql` | ❌ No | Untracked by drizzle-kit |
->
-> **Do not run `pnpm db:migrate` until you decide:**
-> - If these SQL files contain schema that is already applied to the DB → update the journal to reflect that
-> - If they represent pending changes → regenerate snapshots with `pnpm db:generate` and add them to the journal properly
-> - **Running `pnpm db:migrate` as-is will NOT apply these two files** (drizzle only runs journal-tracked entries)
+> Do not run `pnpm db:migrate` or `pnpm db:push` against production until the new PostgreSQL migration set has been reviewed and approved.
 
 ---
 

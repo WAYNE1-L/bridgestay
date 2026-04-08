@@ -13,7 +13,7 @@ services:
       - key: DEV_DEMO_MODE
         value: "false"
 
-      # ── Required — Render will prompt for values ─────────────────────────
+      # ── Required — Render will prompt for values (including PostgreSQL DATABASE_URL) ──
       - key: NODE_ENV
         sync: false
       - key: DATABASE_URL

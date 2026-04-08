@@ -1,5 +1,6 @@
 import { eq, and, or, like, gte, lte, desc, asc, sql, inArray } from "drizzle-orm";
-import { drizzle } from "drizzle-orm/mysql2";
+import { drizzle, type NodePgDatabase } from "drizzle-orm/node-postgres";
+import { Pool } from "pg";
 import { 
   InsertUser, 
   users, 
@@ -39,16 +40,20 @@ import {
   listingReports,
   type InsertListingReport,
 } from "../drizzle/schema";
+import * as schema from "../drizzle/schema";
 import { ENV } from './_core/env';
 
-let _db: ReturnType<typeof drizzle> | null = null;
+let _db: NodePgDatabase<typeof schema> | null = null;
+let _pool: Pool | null = null;
 
 export async function getDb() {
-  if (!_db && process.env.DATABASE_URL) {
+  if (!_db && ENV.databaseUrl) {
     try {
-      _db = drizzle(process.env.DATABASE_URL);
+      _pool = new Pool({ connectionString: ENV.databaseUrl });
+      _db = drizzle(_pool, { schema });
     } catch (error) {
       console.warn("[Database] Failed to connect:", error);
+      _pool = null;
       _db = null;
     }
   }
@@ -107,7 +112,8 @@ export async function upsertUser(user: InsertUser): Promise<void> {
       updateSet.lastSignedIn = new Date();
     }
 
-    await db.insert(users).values(values).onDuplicateKeyUpdate({
+    await db.insert(users).values(values).onConflictDoUpdate({
+      target: users.openId,
       set: updateSet,
     });
   } catch (error) {
@@ -153,7 +159,8 @@ export async function upsertStudentProfile(profile: InsertStudentProfile) {
   const db = await getDb();
   if (!db) return;
 
-  await db.insert(studentProfiles).values(profile).onDuplicateKeyUpdate({
+  await db.insert(studentProfiles).values(profile).onConflictDoUpdate({
+    target: studentProfiles.userId,
     set: {
       universityName: profile.universityName,
       universityCity: profile.universityCity,
@@ -185,7 +192,8 @@ export async function upsertLandlordProfile(profile: InsertLandlordProfile) {
   const db = await getDb();
   if (!db) return;
 
-  await db.insert(landlordProfiles).values(profile).onDuplicateKeyUpdate({
+  await db.insert(landlordProfiles).values(profile).onConflictDoUpdate({
+    target: landlordProfiles.userId,
     set: {
       companyName: profile.companyName,
       businessType: profile.businessType,
@@ -264,7 +272,7 @@ export async function getApartments(filters: ApartmentFilters = {}, limit = 20, 
   }
   if (filters.nearUniversity?.trim()) {
     conditions.push(
-      sql`LOWER(CAST(${apartments.nearbyUniversities} AS CHAR)) LIKE ${`%${filters.nearUniversity.trim().toLowerCase()}%`}`
+      sql`LOWER(CAST(${apartments.nearbyUniversities} AS TEXT)) LIKE ${`%${filters.nearUniversity.trim().toLowerCase()}%`}`
     );
   }
   if (filters.landlordId) {
@@ -293,8 +301,8 @@ export async function createApartment(apartment: InsertApartment) {
   const db = await getDb();
   if (!db) return undefined;
 
-  const result = await db.insert(apartments).values(apartment);
-  return result[0].insertId;
+  const result = await db.insert(apartments).values(apartment).returning({ id: apartments.id });
+  return result[0]?.id;
 }
 
 export async function updateApartment(id: number, data: Partial<InsertApartment>) {
@@ -361,8 +369,8 @@ export async function createApplication(application: InsertApplication) {
   const db = await getDb();
   if (!db) return undefined;
 
-  const result = await db.insert(applications).values(application);
-  return result[0].insertId;
+  const result = await db.insert(applications).values(application).returning({ id: applications.id });
+  return result[0]?.id;
 }
 
 export async function getApplicationById(id: number) {
@@ -433,8 +441,8 @@ export async function createDocument(document: InsertDocument) {
   const db = await getDb();
   if (!db) return undefined;
 
-  const result = await db.insert(documents).values(document);
-  return result[0].insertId;
+  const result = await db.insert(documents).values(document).returning({ id: documents.id });
+  return result[0]?.id;
 }
 
 export async function getUserDocuments(userId: number) {
@@ -502,8 +510,8 @@ export async function createPayment(payment: InsertPayment) {
   const db = await getDb();
   if (!db) return undefined;
 
-  const result = await db.insert(payments).values(payment);
-  return result[0].insertId;
+  const result = await db.insert(payments).values(payment).returning({ id: payments.id });
+  return result[0]?.id;
 }
 
 export async function getPaymentById(id: number) {
@@ -578,8 +586,8 @@ export async function saveApartment(userId: number, apartmentId: number) {
   const db = await getDb();
   if (!db) return;
 
-  await db.insert(savedApartments).values({ userId, apartmentId }).onDuplicateKeyUpdate({
-    set: { userId },
+  await db.insert(savedApartments).values({ userId, apartmentId }).onConflictDoNothing({
+    target: [savedApartments.userId, savedApartments.apartmentId],
   });
 }
 
@@ -631,8 +639,8 @@ export async function createMessage(message: InsertMessage) {
   const db = await getDb();
   if (!db) return undefined;
 
-  const result = await db.insert(messages).values(message);
-  return result[0].insertId;
+  const result = await db.insert(messages).values(message).returning({ id: messages.id });
+  return result[0]?.id;
 }
 
 export async function getConversation(userId1: number, userId2: number, apartmentId?: number) {
@@ -680,7 +688,7 @@ export async function getUnreadMessageCount(userId: number) {
       eq(messages.read, false)
     ));
 
-  return result[0]?.count ?? 0;
+  return Number(result[0]?.count ?? 0);
 }
 
 // ============ UNIVERSITY QUERIES ============
@@ -713,8 +721,8 @@ export async function createUniversity(university: InsertUniversity) {
   const db = await getDb();
   if (!db) return undefined;
 
-  const result = await db.insert(universities).values(university);
-  return result[0].insertId;
+  const result = await db.insert(universities).values(university).returning({ id: universities.id });
+  return result[0]?.id;
 }
 
 // ============ DASHBOARD STATS ============
@@ -746,10 +754,10 @@ export async function getLandlordStats(landlordId: number) {
     .where(eq(apartments.landlordId, landlordId));
 
   return {
-    totalProperties: apartmentCount[0]?.count ?? 0,
-    activeListings: activeListings[0]?.count ?? 0,
-    pendingApplications: pendingApplications[0]?.count ?? 0,
-    totalViews: totalViews[0]?.total ?? 0,
+    totalProperties: Number(apartmentCount[0]?.count ?? 0),
+    activeListings: Number(activeListings[0]?.count ?? 0),
+    pendingApplications: Number(pendingApplications[0]?.count ?? 0),
+    totalViews: Number(totalViews[0]?.total ?? 0),
   };
 }
 
@@ -773,9 +781,9 @@ export async function getStudentStats(studentId: number) {
     ));
 
   return {
-    totalApplications: applicationCount[0]?.count ?? 0,
-    savedApartments: savedCount[0]?.count ?? 0,
-    approvedApplications: approvedApplications[0]?.count ?? 0,
+    totalApplications: Number(applicationCount[0]?.count ?? 0),
+    savedApartments: Number(savedCount[0]?.count ?? 0),
+    approvedApplications: Number(approvedApplications[0]?.count ?? 0),
   };
 }
 
@@ -786,8 +794,8 @@ export async function createNotification(data: InsertNotification) {
   const db = await getDb();
   if (!db) return null;
   
-  const result = await db.insert(notifications).values(data);
-  return result[0].insertId;
+  const result = await db.insert(notifications).values(data).returning({ id: notifications.id });
+  return result[0]?.id;
 }
 
 export async function getUserNotifications(userId: number, limit = 50) {
@@ -812,7 +820,7 @@ export async function getUnreadNotificationCount(userId: number) {
       eq(notifications.read, false)
     ));
   
-  return result[0]?.count ?? 0;
+  return Number(result[0]?.count ?? 0);
 }
 
 export async function markNotificationAsRead(notificationId: number, userId: number) {
@@ -849,8 +857,8 @@ export async function createPromotion(data: InsertPromotion) {
   const db = await getDb();
   if (!db) return null;
   
-  const result = await db.insert(promotions).values(data);
-  return result[0].insertId;
+  const result = await db.insert(promotions).values(data).returning({ id: promotions.id });
+  return result[0]?.id;
 }
 
 export async function getPromotionBySessionId(sessionId: string) {
@@ -908,9 +916,10 @@ export async function expirePromotions() {
     .where(and(
       eq(promotions.status, "active"),
       lte(promotions.endDate, now)
-    ));
+    ))
+    .returning({ id: promotions.id });
   
-  return result[0].affectedRows ?? 0;
+  return result.length;
 }
 
 export async function getUserPromotions(userId: number) {
@@ -928,8 +937,8 @@ export async function getUserPromotions(userId: number) {
 export async function createListingReport(data: InsertListingReport): Promise<number | undefined> {
   const db = await getDb();
   if (!db) return undefined;
-  const result = await db.insert(listingReports).values(data);
-  return result[0].insertId;
+  const result = await db.insert(listingReports).values(data).returning({ id: listingReports.id });
+  return result[0]?.id;
 }
 
 export async function getListingReportSummary() {

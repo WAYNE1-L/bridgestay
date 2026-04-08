@@ -1,13 +1,16 @@
-import { drizzle } from "drizzle-orm/mysql2";
-import { mysqlTable, int, mysqlEnum, text, timestamp } from "drizzle-orm/mysql-core";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { pgEnum, pgTable, serial, text, timestamp, integer } from "drizzle-orm/pg-core";
 import { eq, sql } from "drizzle-orm";
+import pg from "pg";
 
-const listingReports = mysqlTable("listing_reports", {
-  id: int("id").autoincrement().primaryKey(),
-  apartmentId: int("apartmentId").notNull(),
-  reason: mysqlEnum("reason", ["unavailable", "wrong_details", "suspicious", "other"]).notNull(),
+const listingReportReasonEnum = pgEnum("listing_report_reason", ["unavailable", "wrong_details", "suspicious", "other"]);
+
+const listingReports = pgTable("listing_reports", {
+  id: serial("id").primaryKey(),
+  apartmentId: integer("apartmentId").notNull(),
+  reason: listingReportReasonEnum("reason").notNull(),
   notes: text("notes"),
-  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  createdAt: timestamp("createdAt", { mode: "date" }).defaultNow().notNull(),
 });
 
 const DB_URL = process.env.DATABASE_URL;
@@ -19,7 +22,8 @@ async function main() {
   }
 
   console.log("Connecting to:", DB_URL.replace(/:[^@]+@/, ':***@'));
-  const db = drizzle(DB_URL);
+  const pool = new pg.Pool({ connectionString: DB_URL });
+  const db = drizzle(pool);
 
   // Phase A: Insert a test apartment via raw SQL (matching actual table schema)
   console.log("\n=== Phase A: Insert test apartment ===");
@@ -28,9 +32,10 @@ async function main() {
     VALUES (9999, 'Smoke Test Apt', 'apartment', '123 Test St', 'Salt Lake City', 'UT', '84101', 2, 1.0, 1200.00, 500.00, ${JSON.stringify([
       "University of Utah",
       "Westminster University",
-    ])}, NOW(), 'active')
+    ])}::json, NOW(), 'published')
+    RETURNING id
   `);
-  const aptId = aptInsert[0].insertId;
+  const aptId = aptInsert.rows[0].id;
   console.log("✓ Apartment inserted, ID:", aptId);
 
   // Phase B: Insert listing reports for all 4 reason enums
@@ -41,8 +46,8 @@ async function main() {
       apartmentId: aptId,
       reason,
       notes: reason === "unavailable" ? "This listing appears to have been taken down already." : null,
-    });
-    console.log("  ✓ reason='" + reason + "' → ID:" + r[0].insertId);
+    }).returning({ id: listingReports.id });
+    console.log("  ✓ reason='" + reason + "' → ID:" + r[0].id);
   }
 
   // Phase C: Verify report persistence
@@ -67,7 +72,7 @@ async function main() {
   // Phase D: Verify nearbyUniversities round-trip
   console.log("\n=== Phase D: Verify nearbyUniversities ===");
   const aptRows = await db.execute(sql`SELECT id, title, nearbyUniversities FROM apartments WHERE id = ${aptId}`);
-  const apt = aptRows[0][0];
+  const apt = aptRows.rows[0];
   console.log("  Raw type:", typeof apt.nearbyUniversities);
   const unis = typeof apt.nearbyUniversities === "string"
     ? JSON.parse(apt.nearbyUniversities)
@@ -89,6 +94,7 @@ async function main() {
   await db.delete(listingReports).where(eq(listingReports.apartmentId, aptId));
   await db.execute(sql`DELETE FROM apartments WHERE id = ${aptId}`);
   console.log("✓ Test data cleaned up");
+  await pool.end();
 
   console.log("\n" + "=".repeat(50));
   console.log(allPassed ? "ALL CHECKS PASSED ✓" : "SOME CHECKS FAILED ✗");

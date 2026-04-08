@@ -11,9 +11,9 @@
  *  5. Prints remaining total to confirm nothing else was touched
  */
 import "dotenv/config";
-import { drizzle } from "drizzle-orm/mysql2";
+import { drizzle } from "drizzle-orm/node-postgres";
 import { like, sql } from "drizzle-orm";
-import mysql2 from "mysql2/promise";
+import { Pool } from "pg";
 import { apartments } from "../drizzle/schema";
 
 async function main() {
@@ -23,8 +23,8 @@ async function main() {
     process.exit(1);
   }
 
-  const connection = await mysql2.createConnection(url);
-  const db = drizzle(connection);
+  const pool = new Pool({ connectionString: url });
+  const db = drizzle(pool);
 
   // ── Step 1: preview rows that will be deleted ─────────────────────────────
   const devMockRows = await db
@@ -34,7 +34,7 @@ async function main() {
 
   if (devMockRows.length === 0) {
     console.log("✅  No [DEV MOCK] rows found in the apartments table — nothing to delete.");
-    await connection.end();
+    await pool.end();
     return;
   }
 
@@ -54,26 +54,28 @@ async function main() {
 
   console.log("\nDependent rows referencing those apartment ids:");
   for (const ref of dependentTables) {
-    const [{ count }] = await db.execute<{ count: number }>(
+    const countResult = await db.execute<{ count: string }>(
       sql`SELECT COUNT(*) AS count FROM ${ref.table} WHERE ${ref.column} IN (${sql.join(apartmentIds.map((id) => sql`${id}`), sql`, `)})`
     );
+    const count = Number(countResult.rows[0]?.count ?? 0);
     console.log(`  ${ref.label}: ${count}`);
   }
 
   // ── Step 2: delete dependent rows first, then target apartments ────────
   for (const ref of dependentTables) {
     const result = await db.execute(
-      sql`DELETE FROM ${ref.table} WHERE ${ref.column} IN (${sql.join(apartmentIds.map((id) => sql`${id}`), sql`, `)})`
+      sql`DELETE FROM ${ref.table} WHERE ${ref.column} IN (${sql.join(apartmentIds.map((id) => sql`${id}`), sql`, `)}) RETURNING 1`
     );
-    const affected = (result as any)[0]?.affectedRows ?? "unknown";
+    const affected = result.rows.length;
     console.log(`🧹  Deleted ${affected} row(s) from ${ref.label}.`);
   }
 
   const deleteResult = await db
     .delete(apartments)
-    .where(sql`${apartments.id} IN (${sql.join(apartmentIds.map((id) => sql`${id}`), sql`, `)})`);
+    .where(sql`${apartments.id} IN (${sql.join(apartmentIds.map((id) => sql`${id}`), sql`, `)})`)
+    .returning({ id: apartments.id });
 
-  const affectedRows = (deleteResult as any)[0]?.affectedRows ?? "unknown";
+  const affectedRows = deleteResult.length;
   console.log(`\n🗑️  Deleted ${affectedRows} row(s).`);
 
   // ── Step 3: confirm remaining count ──────────────────────────────────────
@@ -95,7 +97,7 @@ async function main() {
     console.log("✅  Zero [DEV MOCK] rows remain.");
   }
 
-  await connection.end();
+  await pool.end();
 }
 
 main().catch((err) => {
