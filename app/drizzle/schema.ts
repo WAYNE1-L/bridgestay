@@ -232,7 +232,7 @@ export const apartments = pgTable("apartments", {
   wechatContact: varchar("wechatContact", { length: 100 }),
 
   // Outreach tracking — used by admin to track contact with WeChat landlords
-  outreachStatus: outreachStatusEnum("outreachStatus").default("not_contacted").notNull(),
+  outreachStatus: outreachStatusEnum("outreachStatus").default("not_contacted"),
   outreachNotes: text("outreachNotes"),
   outreachLastContactedAt: dateTimestamp("outreachLastContactedAt"),
 

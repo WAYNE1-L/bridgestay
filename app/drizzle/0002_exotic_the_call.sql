@@ -1,0 +1,1 @@
+ALTER TABLE "apartments" ALTER COLUMN "outreachStatus" DROP NOT NULL;
