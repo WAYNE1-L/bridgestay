@@ -213,7 +213,7 @@ export async function runSkillPerspective(
       { role: "user", content: userMessage },
     ],
     outputSchema: PERSPECTIVE_OUTPUT_SCHEMA,
-    maxTokens: 1024,
+    maxTokens: 8192,
   });
 
   // Parse response with resilient multi-strategy approach
