@@ -138,6 +138,22 @@ export default function Admin() {
     },
   });
 
+  // Fetch pending applications (submitted status)
+  const { data: pendingApplications = [], refetch: refetchPendingApplications } = trpc.applications.landlordApplications.useQuery(
+    { status: "submitted" },
+    { enabled: isAdmin },
+  );
+
+  const updateApplicationStatusMutation = trpc.applications.updateStatus.useMutation({
+    onSuccess: async () => {
+      await refetchPendingApplications();
+      toast.success(language === "cn" ? "申请状态已更新" : "Application status updated");
+    },
+    onError: (error) => {
+      toast.error(error.message || (language === "cn" ? "更新失败" : "Failed to update status"));
+    },
+  });
+
   const filteredDbApartments = dbApartments.filter((listing: any) => {
     if (statusFilter === "all") return true;
     return listing.status === statusFilter;
@@ -475,7 +491,7 @@ export default function Admin() {
                     <MessageSquare className="w-5 h-5 text-amber-600" />
                   </div>
                   <div>
-                    <p className="text-2xl font-bold text-gray-900">0</p>
+                    <p className="text-2xl font-bold text-gray-900">{pendingApplications.length}</p>
                     <p className="text-sm text-gray-500">待处理咨询</p>
                   </div>
                 </div>
@@ -619,6 +635,112 @@ export default function Admin() {
               )}
             </CardContent>
           </Card>
+
+          {/* Pending Applications */}
+          {pendingApplications.length > 0 && (
+            <Card className="border-0 shadow-soft mb-8">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2">
+                  <ClipboardCheck className="w-5 h-5 text-amber-600" />
+                  {language === "cn" ? "待处理申请" : "Pending Applications"}
+                  <span className="ml-auto text-sm font-normal text-gray-500">
+                    {pendingApplications.length} {language === "cn" ? "条待审核" : "pending"}
+                  </span>
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="border-b text-left text-gray-500">
+                        <th className="py-2 pr-4 font-medium">{language === "cn" ? "申请人" : "Applicant"}</th>
+                        <th className="py-2 pr-4 font-medium">{language === "cn" ? "房源ID" : "Listing ID"}</th>
+                        <th className="py-2 pr-4 font-medium">{language === "cn" ? "期望入住" : "Move-in"}</th>
+                        <th className="py-2 pr-4 font-medium">{language === "cn" ? "提交时间" : "Submitted"}</th>
+                        <th className="py-2 font-medium">{language === "cn" ? "操作" : "Actions"}</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {pendingApplications.map((app: any) => (
+                        <tr key={app.id} className="border-b last:border-0">
+                          <td className="py-3 pr-4">
+                            <div className="font-medium text-gray-900">
+                              {language === "cn" ? "学生" : "Student"} #{app.studentId}
+                            </div>
+                            {app.fundingSource && (
+                              <div className="text-xs text-gray-500">{app.fundingSource}</div>
+                            )}
+                          </td>
+                          <td className="py-3 pr-4">
+                            <Link href={`/apartments/${app.apartmentId}`}>
+                              <span className="text-primary hover:underline cursor-pointer">#{app.apartmentId}</span>
+                            </Link>
+                          </td>
+                          <td className="py-3 pr-4 text-gray-600">
+                            {app.desiredMoveInDate
+                              ? new Date(app.desiredMoveInDate).toLocaleDateString()
+                              : "—"}
+                          </td>
+                          <td className="py-3 pr-4 text-gray-600">
+                            {app.submittedAt
+                              ? new Date(app.submittedAt).toLocaleDateString()
+                              : app.createdAt
+                                ? new Date(app.createdAt).toLocaleDateString()
+                                : "—"}
+                          </td>
+                          <td className="py-3">
+                            <div className="flex gap-2">
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={updateApplicationStatusMutation.isPending}
+                                onClick={() =>
+                                  updateApplicationStatusMutation.mutate({
+                                    id: app.id,
+                                    status: "under_review",
+                                  })
+                                }
+                              >
+                                {language === "cn" ? "审核" : "Review"}
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="text-green-600 border-green-200 hover:bg-green-50"
+                                disabled={updateApplicationStatusMutation.isPending}
+                                onClick={() =>
+                                  updateApplicationStatusMutation.mutate({
+                                    id: app.id,
+                                    status: "approved",
+                                  })
+                                }
+                              >
+                                {language === "cn" ? "通过" : "Approve"}
+                              </Button>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="text-red-600 border-red-200 hover:bg-red-50"
+                                disabled={updateApplicationStatusMutation.isPending}
+                                onClick={() =>
+                                  updateApplicationStatusMutation.mutate({
+                                    id: app.id,
+                                    status: "rejected",
+                                  })
+                                }
+                              >
+                                {language === "cn" ? "拒绝" : "Reject"}
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </CardContent>
+            </Card>
+          )}
 
           <div className="grid lg:grid-cols-2 gap-8">
             {/* Add/Edit Listing Form */}
