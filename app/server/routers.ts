@@ -1037,6 +1037,97 @@ export const appRouter = router({
           nearbyUniversities: nearby,
         };
       }),
+
+    enrichListingFromChat: adminProcedure
+      .input(z.object({
+        chatText: z.string().min(1).max(50000),
+        existingListing: z.object({
+          title: z.string().optional(),
+          description: z.string().optional(),
+          propertyType: z.string().optional(),
+          address: z.string().optional(),
+          city: z.string().optional(),
+          state: z.string().optional(),
+          zipCode: z.string().optional(),
+          bedrooms: z.number().optional(),
+          bathrooms: z.number().optional(),
+          squareFeet: z.number().optional(),
+          monthlyRent: z.number().optional(),
+          securityDeposit: z.number().optional(),
+          availableFrom: z.string().optional(),
+          petsAllowed: z.boolean().optional(),
+          parkingIncluded: z.boolean().optional(),
+          amenities: z.array(z.string()).optional(),
+          utilitiesIncluded: z.array(z.string()).optional(),
+          isSublease: z.boolean().optional(),
+          subleaseEndDate: z.string().optional(),
+          wechatContact: z.string().optional(),
+        }),
+      }))
+      .mutation(async ({ input }) => {
+        const { invokeLLM } = await import("./_core/llm");
+
+        const systemPrompt = `You are a real estate data enrichment assistant. You will receive:
+1. An existing rental listing with its current field values
+2. A WeChat chat conversation between an admin and a landlord/sublessor
+
+Your job is to extract ANY new or updated information from the chat that can improve the listing. Only return fields that have new information not already in the existing listing. If the chat confirms existing information, don't include it.
+
+Chinese rental terms to recognize:
+- 楼层/第X层/X楼 → floor number (add to description)
+- 朝向/朝南/朝北 → facing direction (add to description)
+- 家具/沙发/床/桌子 → furniture details (add to amenities or description)
+- 可以养猫/养狗/宠物 → petsAllowed
+- 车位/停车/garage → parkingIncluded
+- 可以商量/可议价 → note in description that rent is negotiable
+- 合同/lease/租约到X月 → subleaseEndDate or lease terms
+- 水电网/WiFi/包水电 → utilitiesIncluded
+- 洗衣机/烘干机/in-unit laundry → amenities
+- 健身房/游泳池/gym/pool → amenities
+- 微信号/联系方式 → wechatContact
+- 面积/平方英尺/sqft → squareFeet
+- 押金/deposit → securityDeposit
+
+Return a JSON object with only the fields that should be updated. Also include:
+- "suggestedDescriptionAppend": text to append to the existing description (new details learned from chat)
+- "newAmenities": array of new amenities to ADD (not replace) to existing ones
+- "newUtilities": array of new utilities to ADD
+- "chatSummary": 1-2 sentence Chinese summary of what was learned from the chat
+
+If nothing new can be extracted, return {"chatSummary": "聊天记录中未发现新的房源信息。"}`;
+
+        const userMessage = `Existing listing data:\n${JSON.stringify(input.existingListing, null, 2)}\n\nWeChat chat conversation:\n${input.chatText}`;
+
+        try {
+          const result = await invokeLLM({
+            messages: [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: userMessage },
+            ],
+            maxTokens: 8192,
+            responseFormat: { type: "json_object" },
+          });
+
+          const raw = result.choices[0]?.message?.content;
+          if (!raw || typeof raw !== "string") {
+            return { chatSummary: "AI 未返回有效结果。", updates: {} };
+          }
+
+          const cleaned = raw.replace(/```json\s*|```/g, "").trim();
+          const parsed = JSON.parse(cleaned);
+          return {
+            chatSummary: parsed.chatSummary || "",
+            suggestedDescriptionAppend: parsed.suggestedDescriptionAppend,
+            newAmenities: parsed.newAmenities,
+            newUtilities: parsed.newUtilities,
+            updates: parsed,
+          };
+        } catch (err) {
+          const message = err instanceof Error ? err.message : "AI enrichment failed";
+          console.error("[router/enrichListingFromChat]", message);
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message });
+        }
+      }),
   }),
 
   // ============ AI SKILLS ============

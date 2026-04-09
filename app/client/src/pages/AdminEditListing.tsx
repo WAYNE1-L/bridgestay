@@ -25,6 +25,12 @@ import {
   Shield,
   Save,
   Loader2,
+  Sparkles,
+  ChevronDown,
+  ChevronUp,
+  Lightbulb,
+  Check,
+  Bot,
 } from "lucide-react";
 
 const PROPERTY_TYPES = [
@@ -104,6 +110,12 @@ export default function AdminEditListing() {
   const [form, setForm] = useState<FormData | null>(null);
   const [saving, setSaving] = useState(false);
 
+  // AI chat analysis state
+  const [chatOpen, setChatOpen] = useState(false);
+  const [chatText, setChatText] = useState("");
+  const [chatResult, setChatResult] = useState<any>(null);
+  const [selectedUpdates, setSelectedUpdates] = useState<Set<string>>(new Set());
+
   // Populate form when listing loads
   useEffect(() => {
     if (!listing) return;
@@ -153,6 +165,27 @@ export default function AdminEditListing() {
 
   const updateOutreachMutation = trpc.apartments.updateOutreach.useMutation({
     onError: (err) => toast.error(err.message),
+  });
+
+  const enrichMutation = trpc.listings.enrichListingFromChat.useMutation({
+    onSuccess: (data) => {
+      setChatResult(data);
+      // Auto-select all updates
+      const keys = new Set<string>();
+      if (data.suggestedDescriptionAppend) keys.add("suggestedDescriptionAppend");
+      if (data.newAmenities?.length) keys.add("newAmenities");
+      if (data.newUtilities?.length) keys.add("newUtilities");
+      const u = data.updates || {};
+      for (const k of Object.keys(u)) {
+        if (!["chatSummary", "suggestedDescriptionAppend", "newAmenities", "newUtilities"].includes(k)) {
+          keys.add(k);
+        }
+      }
+      setSelectedUpdates(keys);
+    },
+    onError: (err) => {
+      toast.error(err.message || "AI 分析失败");
+    },
   });
 
   const update = <K extends keyof FormData>(key: K, value: FormData[K]) => {
@@ -219,6 +252,125 @@ export default function AdminEditListing() {
     }
   };
 
+  const handleAnalyzeChat = () => {
+    if (!form || !chatText.trim()) return;
+    setChatResult(null);
+    enrichMutation.mutate({
+      chatText: chatText.trim(),
+      existingListing: {
+        title: form.title || undefined,
+        description: form.description || undefined,
+        propertyType: form.propertyType || undefined,
+        address: form.address || undefined,
+        city: form.city || undefined,
+        state: form.state || undefined,
+        zipCode: form.zipCode || undefined,
+        bedrooms: form.bedrooms ? Number(form.bedrooms) : undefined,
+        bathrooms: form.bathrooms ? Number(form.bathrooms) : undefined,
+        squareFeet: form.squareFeet ? Number(form.squareFeet) : undefined,
+        monthlyRent: form.monthlyRent ? Number(form.monthlyRent) : undefined,
+        securityDeposit: form.securityDeposit ? Number(form.securityDeposit) : undefined,
+        availableFrom: form.availableFrom || undefined,
+        petsAllowed: form.petsAllowed,
+        parkingIncluded: form.parkingIncluded,
+        amenities: form.amenitiesText ? form.amenitiesText.split(",").map((s) => s.trim()).filter(Boolean) : undefined,
+        utilitiesIncluded: form.utilitiesText ? form.utilitiesText.split(",").map((s) => s.trim()).filter(Boolean) : undefined,
+        isSublease: form.isSublease,
+        subleaseEndDate: form.subleaseEndDate || undefined,
+        wechatContact: form.wechatContact || undefined,
+      },
+    });
+  };
+
+  const FIELD_LABELS: Record<string, string> = {
+    suggestedDescriptionAppend: "补充描述",
+    newAmenities: "新增设施",
+    newUtilities: "新增水电网",
+    monthlyRent: "月租",
+    securityDeposit: "押金",
+    squareFeet: "面积",
+    bedrooms: "卧室",
+    bathrooms: "卫浴",
+    petsAllowed: "允许宠物",
+    parkingIncluded: "含停车位",
+    isSublease: "转租",
+    subleaseEndDate: "转租结束日期",
+    wechatContact: "微信号",
+    availableFrom: "可入住日期",
+    propertyType: "房型",
+    minLeaseTerm: "最短租期",
+    maxLeaseTerm: "最长租期",
+  };
+
+  const handleApplyUpdates = () => {
+    if (!form || !chatResult) return;
+    let count = 0;
+    const updates = chatResult.updates || {};
+
+    if (selectedUpdates.has("suggestedDescriptionAppend") && chatResult.suggestedDescriptionAppend) {
+      const sep = form.description ? "\n\n" : "";
+      update("description", form.description + sep + chatResult.suggestedDescriptionAppend);
+      count++;
+    }
+    if (selectedUpdates.has("newAmenities") && chatResult.newAmenities?.length) {
+      const existing = form.amenitiesText ? form.amenitiesText.split(",").map((s) => s.trim()).filter(Boolean) : [];
+      const merged = [...existing, ...chatResult.newAmenities.filter((a: string) => !existing.some((e) => e.toLowerCase() === a.toLowerCase()))];
+      update("amenitiesText", merged.join(", "));
+      count++;
+    }
+    if (selectedUpdates.has("newUtilities") && chatResult.newUtilities?.length) {
+      const existing = form.utilitiesText ? form.utilitiesText.split(",").map((s) => s.trim()).filter(Boolean) : [];
+      const merged = [...existing, ...chatResult.newUtilities.filter((u: string) => !existing.some((e) => e.toLowerCase() === u.toLowerCase()))];
+      update("utilitiesText", merged.join(", "));
+      count++;
+    }
+
+    // Direct field updates
+    const directFields: Record<string, keyof FormData> = {
+      monthlyRent: "monthlyRent",
+      securityDeposit: "securityDeposit",
+      squareFeet: "squareFeet",
+      bedrooms: "bedrooms",
+      bathrooms: "bathrooms",
+      wechatContact: "wechatContact",
+      availableFrom: "availableFrom",
+      subleaseEndDate: "subleaseEndDate",
+      propertyType: "propertyType",
+      minLeaseTerm: "minLeaseTerm",
+      maxLeaseTerm: "maxLeaseTerm",
+    };
+    for (const [updateKey, formKey] of Object.entries(directFields)) {
+      if (selectedUpdates.has(updateKey) && updates[updateKey] !== undefined) {
+        update(formKey, String(updates[updateKey]));
+        count++;
+      }
+    }
+    // Boolean fields
+    if (selectedUpdates.has("petsAllowed") && updates.petsAllowed !== undefined) {
+      update("petsAllowed", Boolean(updates.petsAllowed));
+      count++;
+    }
+    if (selectedUpdates.has("parkingIncluded") && updates.parkingIncluded !== undefined) {
+      update("parkingIncluded", Boolean(updates.parkingIncluded));
+      count++;
+    }
+    if (selectedUpdates.has("isSublease") && updates.isSublease !== undefined) {
+      update("isSublease", Boolean(updates.isSublease));
+      count++;
+    }
+
+    toast.success(`已应用 ${count} 项更新`);
+  };
+
+  const toggleUpdate = (key: string) => {
+    setSelectedUpdates((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
   const hasLocation = useMemo(() => {
     const a = listing as any;
     return a?.latitude && a?.longitude;
@@ -282,6 +434,137 @@ export default function AdminEditListing() {
             已定位坐标: {Number((listing as any).latitude).toFixed(4)}, {Number((listing as any).longitude).toFixed(4)}
           </div>
         )}
+
+        {/* AI Chat Analysis */}
+        <Card className="border-0 shadow-soft mb-6">
+          <CardHeader
+            className="cursor-pointer select-none"
+            onClick={() => setChatOpen(!chatOpen)}
+          >
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Bot className="w-4 h-4" />
+              AI 聊天分析
+              <span className="ml-auto">
+                {chatOpen ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+              </span>
+            </CardTitle>
+            <CardDescription>粘贴与房东/转租人的微信聊天记录，AI 自动提取房源补充信息</CardDescription>
+          </CardHeader>
+          {chatOpen && (
+            <CardContent className="space-y-4">
+              <Textarea
+                value={chatText}
+                onChange={(e) => setChatText(e.target.value)}
+                placeholder={"粘贴微信聊天记录...\n\n例如：\n房东：这个房子在3楼，朝南的\n我：有家具吗？\n房东：有的，沙发床桌子都有，包水电网"}
+                className="min-h-[120px] text-sm"
+                maxLength={50000}
+              />
+              <Button
+                onClick={handleAnalyzeChat}
+                disabled={enrichMutation.isPending || !chatText.trim()}
+                className="gap-2"
+              >
+                {enrichMutation.isPending ? (
+                  <>
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    AI 正在分析聊天记录...
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="w-4 h-4" />
+                    分析聊天记录
+                  </>
+                )}
+              </Button>
+
+              {/* Results */}
+              {chatResult && (
+                <div className="space-y-4 pt-2">
+                  {/* Summary */}
+                  <div className="rounded-xl bg-amber-50 border border-amber-200 px-4 py-3">
+                    <div className="flex items-center gap-2 text-sm font-medium text-amber-800 mb-1">
+                      <Lightbulb className="w-4 h-4" />
+                      分析结果
+                    </div>
+                    <p className="text-sm text-amber-700">{chatResult.chatSummary}</p>
+                  </div>
+
+                  {/* Update items */}
+                  {(() => {
+                    const updates = chatResult.updates || {};
+                    const items: { key: string; label: string; value: string }[] = [];
+
+                    if (chatResult.suggestedDescriptionAppend) {
+                      items.push({
+                        key: "suggestedDescriptionAppend",
+                        label: "补充描述",
+                        value: chatResult.suggestedDescriptionAppend,
+                      });
+                    }
+                    if (chatResult.newAmenities?.length) {
+                      items.push({
+                        key: "newAmenities",
+                        label: "新增设施",
+                        value: chatResult.newAmenities.join(", "),
+                      });
+                    }
+                    if (chatResult.newUtilities?.length) {
+                      items.push({
+                        key: "newUtilities",
+                        label: "新增水电网",
+                        value: chatResult.newUtilities.join(", "),
+                      });
+                    }
+                    for (const [k, v] of Object.entries(updates)) {
+                      if (["chatSummary", "suggestedDescriptionAppend", "newAmenities", "newUtilities"].includes(k)) continue;
+                      if (v === undefined || v === null) continue;
+                      items.push({
+                        key: k,
+                        label: FIELD_LABELS[k] || k,
+                        value: typeof v === "boolean" ? (v ? "是" : "否") : String(v),
+                      });
+                    }
+
+                    if (items.length === 0) return null;
+
+                    return (
+                      <>
+                        <div className="space-y-2">
+                          {items.map((item) => (
+                            <label
+                              key={item.key}
+                              className="flex items-start gap-3 p-3 rounded-lg border bg-white hover:bg-gray-50 cursor-pointer transition-colors"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={selectedUpdates.has(item.key)}
+                                onChange={() => toggleUpdate(item.key)}
+                                className="mt-0.5 h-4 w-4 rounded border-gray-300 accent-primary"
+                              />
+                              <div className="flex-1 min-w-0">
+                                <div className="text-sm font-medium text-gray-700">{item.label}</div>
+                                <div className="text-sm text-gray-500 break-words">{item.value}</div>
+                              </div>
+                            </label>
+                          ))}
+                        </div>
+                        <Button
+                          onClick={handleApplyUpdates}
+                          disabled={selectedUpdates.size === 0}
+                          variant="outline"
+                          className="gap-2 w-full"
+                        >
+                          <Check className="w-4 h-4" />
+                          应用选中的更新 ({selectedUpdates.size})
+                        </Button>
+                      </>
+                    );
+                  })()}
+                </div>
+              )}
+            </CardContent>
+          )}
+        </Card>
 
         <div className="space-y-6">
           {/* Basic Info */}
