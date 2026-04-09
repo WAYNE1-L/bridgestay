@@ -303,10 +303,11 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     payload.tool_choice = normalizedToolChoice;
   }
 
-  // 2048 tokens is ample for a structured JSON extraction response.
-  // Gemini's OpenAI-compat endpoint does not support the Forge-specific
-  // "thinking" field — it has been removed to prevent 400 errors.
-  payload.max_tokens = 2048;
+  // gemini-2.5-flash is a "thinking" model — max_completion_tokens includes
+  // both internal reasoning tokens AND the visible output tokens.
+  // 2048 was too small, causing truncated JSON responses (finishReason: 'length').
+  // 8192 gives ample room for thinking + a full structured JSON extraction.
+  payload.max_completion_tokens = params.maxTokens ?? params.max_tokens ?? 8192;
 
   const normalizedResponseFormat = normalizeResponseFormat({
     responseFormat,

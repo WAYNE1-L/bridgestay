@@ -1160,7 +1160,7 @@ export async function extractListingFromWeChat(params: {
         { role: "user", content: userContent as any },
       ],
       outputSchema: LISTING_OUTPUT_SCHEMA,
-      maxTokens: 1024,
+      maxTokens: 8192,
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
