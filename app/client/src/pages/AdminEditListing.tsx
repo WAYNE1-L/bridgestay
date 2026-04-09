@@ -279,7 +279,7 @@ export default function AdminEditListing() {
         {hasLocation && (
           <div className="mb-6 rounded-xl bg-green-50 border border-green-200 px-4 py-3 flex items-center gap-2 text-sm text-green-700">
             <MapPin className="w-4 h-4 shrink-0" />
-            \u5DF2\u5730\u7406\u7F16\u7801: {(listing as any).latitude?.toFixed(4)}, {(listing as any).longitude?.toFixed(4)}
+            \u5DF2\u5730\u7406\u7F16\u7801: {Number((listing as any).latitude).toFixed(4)}, {Number((listing as any).longitude).toFixed(4)}
           </div>
         )}
 
