@@ -11,6 +11,7 @@ import { useListings, BilingualListing } from "@/contexts/ListingsContext";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
+import { safeJsonArray } from "@/lib/safeJsonArray";
 import { Plus, Trash2, Home, ImageIcon, DollarSign, MapPin, FileText, Tag, Shield, Pencil, X, Save, Wand2, Upload, CheckCircle2, ClipboardCheck, Building2, Eye, MessageSquare, TrendingUp, BarChart3, Star, Circle, EyeOff } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
@@ -1324,15 +1325,7 @@ export default function Admin() {
                         </div>
                         
                         {(() => {
-                          const amenities = listing.amenities
-                            ? (() => {
-                                try {
-                                  return JSON.parse(listing.amenities as string) as string[];
-                                } catch {
-                                  return [];
-                                }
-                              })()
-                            : [];
+                          const amenities = safeJsonArray(listing.amenities);
 
                           if (amenities.length === 0) return null;
 

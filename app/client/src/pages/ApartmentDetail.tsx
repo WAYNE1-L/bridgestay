@@ -5,6 +5,7 @@ import { Separator } from "@/components/ui/separator";
 import { MapView } from "@/components/Map";
 import { trpc } from "@/lib/trpc";
 import { computeSignals } from "@/lib/signals";
+import { safeJsonArray } from "@/lib/safeJsonArray";
 import { useAuth } from "@/_core/hooks/useAuth";
 import { getLoginUrl } from "@/const";
 import { useListings } from "@/contexts/ListingsContext";
@@ -386,9 +387,9 @@ export default function ApartmentDetail() {
     );
   }
   
-  const images = apartment.images ? JSON.parse(apartment.images as string) : [];
-  const amenities = apartment.amenities ? JSON.parse(apartment.amenities as string) : [];
-  const utilities = apartment.utilitiesIncluded ? JSON.parse(apartment.utilitiesIncluded as string) : [];
+  const images = safeJsonArray(apartment.images);
+  const amenities = safeJsonArray(apartment.amenities);
+  const utilities = safeJsonArray(apartment.utilitiesIncluded);
   const statusLabel = getStatusLabel(apartment.status, Boolean(apartment.isSublease), t);
   const freshnessInfo = getFreshnessInfo(
     (apartment as any).updatedAt,
@@ -418,12 +419,9 @@ export default function ApartmentDetail() {
   const emailBody = encodeURIComponent(
     `${t("detail.emailBodyPrefix")} ${apartment.title}. ${t("detail.emailBodySuffix")}`
   );
-  const nearbyUniversities: string[] = apartment.nearbyUniversities
-    ? (Array.isArray(apartment.nearbyUniversities)
-        ? apartment.nearbyUniversities
-        : JSON.parse(apartment.nearbyUniversities as string))
-      .filter((u: unknown): u is string => typeof u === "string" && u.length > 0)
-    : [];
+  const nearbyUniversities: string[] = Array.isArray(apartment.nearbyUniversities)
+    ? apartment.nearbyUniversities.filter((u: unknown): u is string => typeof u === "string" && u.length > 0)
+    : safeJsonArray(apartment.nearbyUniversities);
   
   return (
     <div className="min-h-screen bg-background">

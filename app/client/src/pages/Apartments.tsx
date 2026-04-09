@@ -41,6 +41,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { useListings } from "@/contexts/ListingsContext";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { toast } from "sonner";
+import { safeJsonArray } from "@/lib/safeJsonArray";
 
 const fadeInUp = {
   initial: { opacity: 0, y: 20 },
@@ -71,17 +72,7 @@ function parseNearbyUniversities(value: unknown): string[] {
   if (Array.isArray(value)) {
     return value.filter((item): item is string => typeof item === "string" && item.length > 0);
   }
-  if (typeof value === "string") {
-    try {
-      const parsed = JSON.parse(value);
-      return Array.isArray(parsed)
-        ? parsed.filter((item): item is string => typeof item === "string" && item.length > 0)
-        : [];
-    } catch {
-      return [];
-    }
-  }
-  return [];
+  return safeJsonArray(value);
 }
 
 interface ApartmentCardProps {
@@ -93,7 +84,7 @@ interface ApartmentCardProps {
 }
 
 function ApartmentCard({ apartment, onSave, isSaved, isAdminMode = false, onDelete }: ApartmentCardProps) {
-  const images = apartment.images ? JSON.parse(apartment.images) : [];
+  const images = safeJsonArray(apartment.images);
   const { language, t } = useLanguage();
   
   return (
