@@ -28,29 +28,29 @@ import {
 } from "lucide-react";
 
 const PROPERTY_TYPES = [
-  { value: "apartment", label: "\u516C\u5BD3" },
-  { value: "studio", label: "\u5355\u95F4" },
-  { value: "house", label: "\u72EC\u680B" },
-  { value: "room", label: "\u623F\u95F4" },
-  { value: "condo", label: "\u516C\u5BD3\u5957\u623F" },
-  { value: "townhouse", label: "\u8054\u6392\u522B\u5885" },
+  { value: "apartment", label: "公寓" },
+  { value: "studio", label: "单间" },
+  { value: "house", label: "独栋" },
+  { value: "room", label: "房间" },
+  { value: "condo", label: "公寓套房" },
+  { value: "townhouse", label: "联排别墅" },
 ];
 
 const STATUS_OPTIONS = [
-  { value: "draft", label: "\u8349\u7A3F", color: "bg-gray-100 text-gray-700" },
-  { value: "pending_review", label: "\u5F85\u5BA1\u6838", color: "bg-amber-100 text-amber-700" },
-  { value: "published", label: "\u5DF2\u53D1\u5E03", color: "bg-green-100 text-green-700" },
-  { value: "rejected", label: "\u5DF2\u62D2\u7EDD", color: "bg-red-100 text-red-700" },
-  { value: "archived", label: "\u5DF2\u5F52\u6863", color: "bg-gray-100 text-gray-500" },
+  { value: "draft", label: "草稿", color: "bg-gray-100 text-gray-700" },
+  { value: "pending_review", label: "待审核", color: "bg-amber-100 text-amber-700" },
+  { value: "published", label: "已发布", color: "bg-green-100 text-green-700" },
+  { value: "rejected", label: "已拒绝", color: "bg-red-100 text-red-700" },
+  { value: "archived", label: "已归档", color: "bg-gray-100 text-gray-500" },
 ];
 
 const OUTREACH_OPTIONS = [
-  { value: "not_contacted", label: "\u672A\u8054\u7CFB" },
-  { value: "contacted", label: "\u5DF2\u8054\u7CFB" },
-  { value: "in_conversation", label: "\u6C9F\u901A\u4E2D" },
-  { value: "partnered", label: "\u5DF2\u5408\u4F5C" },
-  { value: "declined", label: "\u62D2\u7EDD" },
-  { value: "expired", label: "\u5DF2\u5931\u6548" },
+  { value: "not_contacted", label: "未联系" },
+  { value: "contacted", label: "已联系" },
+  { value: "in_conversation", label: "沟通中" },
+  { value: "partnered", label: "已合作" },
+  { value: "declined", label: "拒绝" },
+  { value: "expired", label: "已失效" },
 ];
 
 type FormData = {
@@ -142,11 +142,11 @@ export default function AdminEditListing() {
 
   const updateMutation = trpc.apartments.update.useMutation({
     onSuccess: () => {
-      toast.success("\u623F\u6E90\u5DF2\u66F4\u65B0");
+      toast.success("房源已更新");
       setSaving(false);
     },
     onError: (err) => {
-      toast.error(err.message || "\u66F4\u65B0\u5931\u8D25");
+      toast.error(err.message || "更新失败");
       setSaving(false);
     },
   });
@@ -162,7 +162,7 @@ export default function AdminEditListing() {
   const handleSave = () => {
     if (!form) return;
     if (form.title.trim().length < 5) {
-      toast.error("\u6807\u9898\u81F3\u5C11\u9700\u89815\u4E2A\u5B57\u7B26");
+      toast.error("标题至少需要5个字符");
       return;
     }
 
@@ -230,7 +230,7 @@ export default function AdminEditListing() {
         <Navbar />
         <div className="max-w-4xl mx-auto px-4 pt-24 pb-12 flex items-center justify-center">
           <Loader2 className="w-6 h-6 animate-spin text-primary" />
-          <span className="ml-2 text-gray-500">\u52A0\u8F7D\u4E2D...</span>
+          <span className="ml-2 text-gray-500">加载中...</span>
         </div>
       </div>
     );
@@ -241,9 +241,9 @@ export default function AdminEditListing() {
       <div className="min-h-screen bg-gradient-to-b from-orange-50/30 to-white">
         <Navbar />
         <div className="max-w-4xl mx-auto px-4 pt-24 pb-12 text-center">
-          <p className="text-gray-500">\u623F\u6E90\u4E0D\u5B58\u5728</p>
+          <p className="text-gray-500">房源不存在</p>
           <Link href="/admin">
-            <Button variant="outline" className="mt-4">\u8FD4\u56DE\u7BA1\u7406\u540E\u53F0</Button>
+            <Button variant="outline" className="mt-4">返回管理后台</Button>
           </Link>
         </div>
       </div>
@@ -259,11 +259,11 @@ export default function AdminEditListing() {
           <Link href="/admin">
             <Button variant="ghost" size="sm" className="gap-1.5">
               <ArrowLeft className="w-4 h-4" />
-              \u8FD4\u56DE
+              返回
             </Button>
           </Link>
           <div className="flex-1">
-            <h1 className="text-xl font-bold text-gray-900">\u7F16\u8F91\u623F\u6E90 #{listingId}</h1>
+            <h1 className="text-xl font-bold text-gray-900">编辑房源 #{listingId}</h1>
           </div>
           <Button
             onClick={handleSave}
@@ -271,7 +271,7 @@ export default function AdminEditListing() {
             className="gap-2"
           >
             {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-            \u4FDD\u5B58\u66F4\u6539
+            保存更改
           </Button>
         </div>
 
@@ -279,29 +279,29 @@ export default function AdminEditListing() {
         {hasLocation && (
           <div className="mb-6 rounded-xl bg-green-50 border border-green-200 px-4 py-3 flex items-center gap-2 text-sm text-green-700">
             <MapPin className="w-4 h-4 shrink-0" />
-            \u5DF2\u5730\u7406\u7F16\u7801: {Number((listing as any).latitude).toFixed(4)}, {Number((listing as any).longitude).toFixed(4)}
+            已定位坐标: {Number((listing as any).latitude).toFixed(4)}, {Number((listing as any).longitude).toFixed(4)}
           </div>
         )}
 
         <div className="space-y-6">
-          {/* ── Basic Info ── */}
+          {/* Basic Info */}
           <Card className="border-0 shadow-soft">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
-                <Building2 className="w-4 h-4" /> \u57FA\u672C\u4FE1\u606F
+                <Building2 className="w-4 h-4" /> 基本信息
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-1.5">
-                <Label>\u6807\u9898 <span className="text-destructive">*</span></Label>
+                <Label>标题 <span className="text-destructive">*</span></Label>
                 <Input
                   value={form.title}
                   onChange={(e) => update("title", e.target.value)}
-                  placeholder="\u623F\u6E90\u6807\u9898"
+                  placeholder="房源标题"
                 />
               </div>
               <div className="space-y-1.5">
-                <Label>\u623F\u578B</Label>
+                <Label>房型</Label>
                 <Select value={form.propertyType} onValueChange={(v) => update("propertyType", v)}>
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
@@ -312,27 +312,27 @@ export default function AdminEditListing() {
                 </Select>
               </div>
               <div className="space-y-1.5">
-                <Label>\u63CF\u8FF0</Label>
+                <Label>描述</Label>
                 <Textarea
                   value={form.description}
                   onChange={(e) => update("description", e.target.value)}
-                  placeholder="\u623F\u6E90\u63CF\u8FF0..."
+                  placeholder="房源描述..."
                   className="min-h-[100px]"
                 />
               </div>
             </CardContent>
           </Card>
 
-          {/* ── Location ── */}
+          {/* Location */}
           <Card className="border-0 shadow-soft">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
-                <MapPin className="w-4 h-4" /> \u4F4D\u7F6E\u4FE1\u606F
+                <MapPin className="w-4 h-4" /> 位置信息
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-1.5">
-                <Label>\u8857\u9053\u5730\u5740 <span className="text-destructive">*</span></Label>
+                <Label>街道地址 <span className="text-destructive">*</span></Label>
                 <Input
                   value={form.address}
                   onChange={(e) => update("address", e.target.value)}
@@ -341,7 +341,7 @@ export default function AdminEditListing() {
               </div>
               <div className="grid grid-cols-3 gap-3">
                 <div className="space-y-1.5">
-                  <Label>\u57CE\u5E02 <span className="text-destructive">*</span></Label>
+                  <Label>城市 <span className="text-destructive">*</span></Label>
                   <Input
                     value={form.city}
                     onChange={(e) => update("city", e.target.value)}
@@ -349,7 +349,7 @@ export default function AdminEditListing() {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>\u5DDE <span className="text-destructive">*</span></Label>
+                  <Label>州 <span className="text-destructive">*</span></Label>
                   <Input
                     value={form.state}
                     onChange={(e) => update("state", e.target.value)}
@@ -358,7 +358,7 @@ export default function AdminEditListing() {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>\u90AE\u7F16 <span className="text-destructive">*</span></Label>
+                  <Label>邮编 <span className="text-destructive">*</span></Label>
                   <Input
                     value={form.zipCode}
                     onChange={(e) => update("zipCode", e.target.value)}
@@ -369,17 +369,17 @@ export default function AdminEditListing() {
             </CardContent>
           </Card>
 
-          {/* ── Pricing & Lease ── */}
+          {/* Pricing & Lease */}
           <Card className="border-0 shadow-soft">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
-                <DollarSign className="w-4 h-4" /> \u4EF7\u683C\u4E0E\u79DF\u7EA6
+                <DollarSign className="w-4 h-4" /> 价格与租约
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-3 gap-3">
                 <div className="space-y-1.5">
-                  <Label>\u6708\u79DF ($) <span className="text-destructive">*</span></Label>
+                  <Label>月租 ($) <span className="text-destructive">*</span></Label>
                   <Input
                     type="number"
                     value={form.monthlyRent}
@@ -388,7 +388,7 @@ export default function AdminEditListing() {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>\u62BC\u91D1 ($)</Label>
+                  <Label>押金 ($)</Label>
                   <Input
                     type="number"
                     value={form.securityDeposit}
@@ -397,7 +397,7 @@ export default function AdminEditListing() {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>\u7533\u8BF7\u8D39 ($)</Label>
+                  <Label>申请费 ($)</Label>
                   <Input
                     type="number"
                     value={form.applicationFee}
@@ -408,7 +408,7 @@ export default function AdminEditListing() {
               </div>
               <div className="grid grid-cols-3 gap-3">
                 <div className="space-y-1.5">
-                  <Label>\u53EF\u5165\u4F4F\u65E5\u671F</Label>
+                  <Label>可入住日期</Label>
                   <Input
                     type="date"
                     value={form.availableFrom}
@@ -416,7 +416,7 @@ export default function AdminEditListing() {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>\u6700\u77ED\u79DF\u671F (\u6708)</Label>
+                  <Label>最短租期 (月)</Label>
                   <Input
                     type="number"
                     value={form.minLeaseTerm}
@@ -425,7 +425,7 @@ export default function AdminEditListing() {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>\u6700\u957F\u79DF\u671F (\u6708)</Label>
+                  <Label>最长租期 (月)</Label>
                   <Input
                     type="number"
                     value={form.maxLeaseTerm}
@@ -437,17 +437,17 @@ export default function AdminEditListing() {
             </CardContent>
           </Card>
 
-          {/* ── Unit Details ── */}
+          {/* Unit Details */}
           <Card className="border-0 shadow-soft">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
-                <BedDouble className="w-4 h-4" /> \u623F\u578B\u8BE6\u60C5
+                <BedDouble className="w-4 h-4" /> 房型详情
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-3 gap-3">
                 <div className="space-y-1.5">
-                  <Label>\u5367\u5BA4 <span className="text-destructive">*</span></Label>
+                  <Label>卧室 <span className="text-destructive">*</span></Label>
                   <Input
                     type="number"
                     value={form.bedrooms}
@@ -456,7 +456,7 @@ export default function AdminEditListing() {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>\u536B\u751F\u95F4 <span className="text-destructive">*</span></Label>
+                  <Label>卫浴 <span className="text-destructive">*</span></Label>
                   <Input
                     type="number"
                     value={form.bathrooms}
@@ -465,19 +465,19 @@ export default function AdminEditListing() {
                   />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>\u9762\u79EF (sqft)</Label>
+                  <Label>面积 (sqft)</Label>
                   <Input
                     type="number"
                     value={form.squareFeet}
                     onChange={(e) => update("squareFeet", e.target.value)}
-                    placeholder="\u53EF\u9009"
+                    placeholder="可选"
                     min={0}
                   />
                 </div>
               </div>
 
               <div className="flex items-center justify-between py-1">
-                <Label className="cursor-pointer">\u5141\u8BB8\u5BA0\u7269</Label>
+                <Label className="cursor-pointer">允许宠物</Label>
                 <Switch
                   checked={form.petsAllowed}
                   onCheckedChange={(v) => update("petsAllowed", v)}
@@ -487,7 +487,7 @@ export default function AdminEditListing() {
               <Separator />
 
               <div className="flex items-center justify-between py-1">
-                <Label className="cursor-pointer">\u542B\u505C\u8F66\u4F4D</Label>
+                <Label className="cursor-pointer">含停车位</Label>
                 <Switch
                   checked={form.parkingIncluded}
                   onCheckedChange={(v) => update("parkingIncluded", v)}
@@ -497,7 +497,7 @@ export default function AdminEditListing() {
               <Separator />
 
               <div className="space-y-1.5">
-                <Label>\u8BBE\u65BD\u914D\u5957 <span className="text-muted-foreground text-xs">(\u9017\u53F7\u5206\u9694)</span></Label>
+                <Label>设施配套 <span className="text-muted-foreground text-xs">(逗号分隔)</span></Label>
                 <Input
                   value={form.amenitiesText}
                   onChange={(e) => update("amenitiesText", e.target.value)}
@@ -506,7 +506,7 @@ export default function AdminEditListing() {
               </div>
 
               <div className="space-y-1.5">
-                <Label>\u542B\u8D39\u7528\u9879 <span className="text-muted-foreground text-xs">(\u9017\u53F7\u5206\u9694)</span></Label>
+                <Label>含费用项 <span className="text-muted-foreground text-xs">(逗号分隔)</span></Label>
                 <Input
                   value={form.utilitiesText}
                   onChange={(e) => update("utilitiesText", e.target.value)}
@@ -516,18 +516,18 @@ export default function AdminEditListing() {
             </CardContent>
           </Card>
 
-          {/* ── Sublease & Contact ── */}
+          {/* Sublease & Contact */}
           <Card className="border-0 shadow-soft">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
-                <MessageSquare className="w-4 h-4" /> \u8F6C\u79DF\u4E0E\u8054\u7CFB
+                <MessageSquare className="w-4 h-4" /> 转租与联系
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex items-center justify-between py-1">
                 <div>
-                  <Label className="cursor-pointer">\u8FD9\u662F\u4E00\u5957\u8F6C\u79DF</Label>
-                  <p className="text-xs text-muted-foreground mt-0.5">\u539F\u79DF\u5BA2\u8F6C\u79DF\u623F\u6E90</p>
+                  <Label className="cursor-pointer">这是一套转租</Label>
+                  <p className="text-xs text-muted-foreground mt-0.5">原租客转租房源</p>
                 </div>
                 <Switch
                   checked={form.isSublease}
@@ -539,7 +539,7 @@ export default function AdminEditListing() {
                 <>
                   <Separator />
                   <div className="space-y-1.5">
-                    <Label>\u8F6C\u79DF\u7ED3\u675F\u65E5\u671F</Label>
+                    <Label>转租结束日期</Label>
                     <Input
                       type="date"
                       value={form.subleaseEndDate}
@@ -552,23 +552,23 @@ export default function AdminEditListing() {
               <Separator />
 
               <div className="space-y-1.5">
-                <Label>\u5FAE\u4FE1\u53F7</Label>
+                <Label>微信号</Label>
                 <Input
                   value={form.wechatContact}
                   onChange={(e) => update("wechatContact", e.target.value)}
-                  placeholder="\u5FAE\u4FE1\u8054\u7CFB\u4EBA ID"
+                  placeholder="微信联系人 ID"
                 />
               </div>
             </CardContent>
           </Card>
 
-          {/* ── Photos ── */}
+          {/* Photos */}
           <Card className="border-0 shadow-soft">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
-                <ImageIcon className="w-4 h-4" /> \u7167\u7247
+                <ImageIcon className="w-4 h-4" /> 照片
               </CardTitle>
-              <CardDescription>\u62D6\u653E\u6216\u70B9\u51FB\u4E0A\u4F20\uFF0C\u6700\u591A10\u5F20\uFF0C\u53EF\u62D6\u52A8\u6392\u5E8F</CardDescription>
+              <CardDescription>拖放或点击上传，最多10张，可拖动排序</CardDescription>
             </CardHeader>
             <CardContent>
               <MultiImageUpload
@@ -581,17 +581,17 @@ export default function AdminEditListing() {
             </CardContent>
           </Card>
 
-          {/* ── Status & Admin ── */}
+          {/* Status & Admin */}
           <Card className="border-0 shadow-soft">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
-                <Shield className="w-4 h-4" /> \u72B6\u6001\u7BA1\u7406
+                <Shield className="w-4 h-4" /> 状态管理
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1.5">
-                  <Label>\u53D1\u5E03\u72B6\u6001</Label>
+                  <Label>发布状态</Label>
                   <Select value={form.status} onValueChange={(v) => update("status", v)}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
@@ -602,7 +602,7 @@ export default function AdminEditListing() {
                   </Select>
                 </div>
                 <div className="space-y-1.5">
-                  <Label>\u8054\u7CFB\u8FFD\u8E2A\u72B6\u6001</Label>
+                  <Label>联系追踪状态</Label>
                   <Select value={form.outreachStatus} onValueChange={(v) => update("outreachStatus", v)}>
                     <SelectTrigger><SelectValue /></SelectTrigger>
                     <SelectContent>
@@ -615,7 +615,7 @@ export default function AdminEditListing() {
               </div>
 
               <div className="flex items-center justify-between py-1">
-                <Label className="cursor-pointer">\u7F6E\u9876\u63A8\u8350</Label>
+                <Label className="cursor-pointer">置顶推荐</Label>
                 <Switch
                   checked={form.featured}
                   onCheckedChange={(v) => update("featured", v)}
@@ -625,11 +625,11 @@ export default function AdminEditListing() {
               <Separator />
 
               <div className="space-y-1.5">
-                <Label>\u8054\u7CFB\u5907\u6CE8</Label>
+                <Label>联系备注</Label>
                 <Textarea
                   value={form.outreachNotes}
                   onChange={(e) => update("outreachNotes", e.target.value)}
-                  placeholder="\u5907\u6CE8\u4FE1\u606F..."
+                  placeholder="备注信息..."
                   className="min-h-[80px]"
                   maxLength={2000}
                 />
@@ -642,12 +642,12 @@ export default function AdminEditListing() {
             <Link href="/admin">
               <Button variant="outline" className="gap-1.5">
                 <ArrowLeft className="w-4 h-4" />
-                \u8FD4\u56DE\u7BA1\u7406\u540E\u53F0
+                返回管理后台
               </Button>
             </Link>
             <Button onClick={handleSave} disabled={saving} className="gap-2">
               {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
-              \u4FDD\u5B58\u66F4\u6539
+              保存更改
             </Button>
           </div>
         </div>
