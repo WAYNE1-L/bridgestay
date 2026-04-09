@@ -238,6 +238,26 @@ export const appRouter = router({
         return { success: true, status: "archived" as const };
       }),
 
+    updateOutreach: adminProcedure
+      .input(z.object({
+        id: z.number(),
+        outreachStatus: z.enum(["not_contacted", "contacted", "in_conversation", "partnered", "declined", "expired"]),
+        outreachNotes: z.string().max(2000).optional(),
+      }))
+      .mutation(async ({ input }) => {
+        const updateData: Record<string, unknown> = {
+          outreachStatus: input.outreachStatus,
+        };
+        if (input.outreachNotes !== undefined) {
+          updateData.outreachNotes = input.outreachNotes;
+        }
+        if (input.outreachStatus === "contacted" || input.outreachStatus === "in_conversation") {
+          updateData.outreachLastContactedAt = new Date();
+        }
+        await db.updateApartment(input.id, updateData);
+        return { success: true };
+      }),
+
     getById: publicProcedure
       .input(z.object({ id: z.number() }))
       .query(async ({ ctx, input }) => {

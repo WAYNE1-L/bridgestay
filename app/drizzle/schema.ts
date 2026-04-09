@@ -74,6 +74,14 @@ const notificationTypeEnum = pgEnum("notification_type", [
 const promotionPlanEnum = pgEnum("promotion_plan", ["7_days", "30_days", "90_days"]);
 const promotionStatusEnum = pgEnum("promotion_status", ["pending", "active", "expired", "cancelled"]);
 const listingReportReasonEnum = pgEnum("listing_report_reason", ["unavailable", "wrong_details", "suspicious", "other"]);
+const outreachStatusEnum = pgEnum("outreach_status", [
+  "not_contacted",
+  "contacted",
+  "in_conversation",
+  "partnered",
+  "declined",
+  "expired",
+]);
 
 /**
  * Core user table backing auth flow.
@@ -222,6 +230,11 @@ export const apartments = pgTable("apartments", {
   isSublease: boolean("isSublease"),
   subleaseEndDate: dateTimestamp("subleaseEndDate"),
   wechatContact: varchar("wechatContact", { length: 100 }),
+
+  // Outreach tracking — used by admin to track contact with WeChat landlords
+  outreachStatus: outreachStatusEnum("outreachStatus").default("not_contacted").notNull(),
+  outreachNotes: text("outreachNotes"),
+  outreachLastContactedAt: dateTimestamp("outreachLastContactedAt"),
 
   createdAt: dateTimestamp("createdAt").defaultNow().notNull(),
   updatedAt: dateTimestamp("updatedAt").defaultNow().$onUpdate(() => new Date()).notNull(),

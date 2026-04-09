@@ -12,7 +12,7 @@ import { useAuth } from "@/_core/hooks/useAuth";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
 import { safeJsonArray } from "@/lib/safeJsonArray";
-import { Plus, Trash2, Home, ImageIcon, DollarSign, MapPin, FileText, Tag, Shield, Pencil, X, Save, Wand2, Upload, CheckCircle2, ClipboardCheck, Building2, Eye, MessageSquare, TrendingUp, BarChart3, Star, Circle, EyeOff } from "lucide-react";
+import { Plus, Trash2, Home, ImageIcon, DollarSign, MapPin, FileText, Tag, Shield, Pencil, X, Save, Wand2, Upload, CheckCircle2, ClipboardCheck, Building2, Eye, MessageSquare, TrendingUp, BarChart3, Star, Circle, EyeOff, Users } from "lucide-react";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Link, useLocation } from "wouter";
@@ -90,7 +90,16 @@ export default function Admin() {
   
   const totalListings = dbApartments.length;
   const activeListings = dbApartments.filter((a: any) => a.status === "published").length;
-  
+
+  const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
+  const outreachFollowUpCount = dbApartments.filter((a: any) => {
+    if (a.outreachStatus !== "contacted" && a.outreachStatus !== "in_conversation") return false;
+    const lastContact = a.outreachLastContactedAt
+      ? new Date(a.outreachLastContactedAt).getTime()
+      : 0;
+    return Date.now() - lastContact > THREE_DAYS_MS;
+  }).length;
+
   const [formData, setFormData] = useState(emptyFormData);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [isFormOpen, setIsFormOpen] = useState(false);
@@ -491,8 +500,8 @@ export default function Admin() {
                     <MessageSquare className="w-5 h-5 text-amber-600" />
                   </div>
                   <div>
-                    <p className="text-2xl font-bold text-gray-900">{pendingApplications.length}</p>
-                    <p className="text-sm text-gray-500">待处理咨询</p>
+                    <p className="text-2xl font-bold text-gray-900">{pendingApplications.length + outreachFollowUpCount}</p>
+                    <p className="text-sm text-gray-500">{language === "cn" ? "待处理/待跟进" : "Pending / Follow-up"}</p>
                   </div>
                 </div>
               </CardContent>
@@ -518,6 +527,12 @@ export default function Admin() {
               <Button variant="outline" className="h-10 px-4 rounded-xl">
                 <BarChart3 className="w-4 h-4 mr-2" />
                 数据概览
+              </Button>
+            </Link>
+            <Link href="/admin/outreach">
+              <Button variant="outline" className="h-10 px-4 rounded-xl">
+                <Users className="w-4 h-4 mr-2" />
+                联系追踪
               </Button>
             </Link>
           </div>
