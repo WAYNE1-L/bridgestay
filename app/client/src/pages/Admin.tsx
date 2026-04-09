@@ -1343,14 +1343,15 @@ export default function Admin() {
                             </div>
                           </div>
                           <div className="flex gap-2">
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => startDbEdit(listing)}
-                              className="text-blue-500 hover:text-blue-600 hover:bg-blue-50 border-blue-200"
-                            >
-                              <Pencil className="w-4 h-4" />
-                            </Button>
+                            <Link href={`/admin/edit/${listing.id}`}>
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="text-blue-500 hover:text-blue-600 hover:bg-blue-50 border-blue-200"
+                              >
+                                <Pencil className="w-4 h-4" />
+                              </Button>
+                            </Link>
                             <Button
                               variant="outline"
                               size="sm"

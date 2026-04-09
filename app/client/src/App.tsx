@@ -19,6 +19,7 @@ import AdminReview from "./pages/AdminReview";
 import Investors from "./pages/Investors";
 import ImportListing from "./pages/ImportListing";
 import AdminOutreach from "./pages/AdminOutreach";
+import AdminEditListing from "./pages/AdminEditListing";
 import { AIConsultant } from "./components/AIConsultant";
 import { AdminRoute } from "./components/AdminRoute";
 import { useAuth } from "./_core/hooks/useAuth";
@@ -78,6 +79,14 @@ function AdminOutreachPage() {
   );
 }
 
+function AdminEditListingPage() {
+  return (
+    <AdminRoute>
+      <AdminEditListing />
+    </AdminRoute>
+  );
+}
+
 function LegacyImportPage() {
   return (
     <AdminRoute>
@@ -101,6 +110,7 @@ function Router() {
       <Route path={"/admin/review"} component={AdminReviewPage} />
       <Route path={"/admin/import"} component={AdminImportPage} />
       <Route path={"/admin/outreach"} component={AdminOutreachPage} />
+      <Route path={"/admin/edit/:id"} component={AdminEditListingPage} />
       <Route path={"/investors"} component={Investors} />
       <Route path={"/import-listing"} component={LegacyImportPage} />
       <Route path={"/404"} component={NotFound} />
