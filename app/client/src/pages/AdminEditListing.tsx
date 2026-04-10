@@ -115,6 +115,10 @@ export default function AdminEditListing() {
   const [chatText, setChatText] = useState("");
   const [chatResult, setChatResult] = useState<any>(null);
   const [selectedUpdates, setSelectedUpdates] = useState<Set<string>>(new Set());
+  const [chatImage, setChatImage] = useState<string | null>(null);
+  const [chatImageMime, setChatImageMime] = useState<string | null>(null);
+  const [chatImagePreview, setChatImagePreview] = useState<string | null>(null);
+  const chatImageInputRef = useState(() => ({ current: null as HTMLInputElement | null }))[0];
 
   // Populate form when listing loads
   useEffect(() => {
@@ -252,11 +256,57 @@ export default function AdminEditListing() {
     }
   };
 
+  const handleChatPaste = (e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      if (item.type.startsWith("image/")) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+          const dataUrl = reader.result as string;
+          setChatImagePreview(dataUrl);
+          const parts = dataUrl.split(",");
+          const mime = parts[0].match(/data:(.*?);/)?.[1] || "image/png";
+          setChatImage(parts[1]);
+          setChatImageMime(mime);
+        };
+        reader.readAsDataURL(file);
+        return;
+      }
+    }
+  };
+
+  const handleChatImageFile = (file: File) => {
+    if (!file.type.startsWith("image/")) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const dataUrl = reader.result as string;
+      setChatImagePreview(dataUrl);
+      const parts = dataUrl.split(",");
+      const mime = parts[0].match(/data:(.*?);/)?.[1] || "image/png";
+      setChatImage(parts[1]);
+      setChatImageMime(mime);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const clearChatImage = () => {
+    setChatImage(null);
+    setChatImageMime(null);
+    setChatImagePreview(null);
+  };
+
   const handleAnalyzeChat = () => {
-    if (!form || !chatText.trim()) return;
+    if (!form || (!chatText.trim() && !chatImage)) return;
     setChatResult(null);
     enrichMutation.mutate({
-      chatText: chatText.trim(),
+      chatText: chatText.trim() || undefined,
+      imageBase64: chatImage || undefined,
+      mimeType: chatImageMime || undefined,
       existingListing: {
         title: form.title || undefined,
         description: form.description || undefined,
@@ -448,20 +498,62 @@ export default function AdminEditListing() {
                 {chatOpen ? <ChevronUp className="w-4 h-4 text-gray-400" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
               </span>
             </CardTitle>
-            <CardDescription>粘贴与房东/转租人的微信聊天记录，AI 自动提取房源补充信息</CardDescription>
+            <CardDescription>粘贴微信聊天文字或截图，AI 自动提取房源补充信息</CardDescription>
           </CardHeader>
           {chatOpen && (
             <CardContent className="space-y-4">
               <Textarea
                 value={chatText}
                 onChange={(e) => setChatText(e.target.value)}
-                placeholder={"粘贴微信聊天记录...\n\n例如：\n房东：这个房子在3楼，朝南的\n我：有家具吗？\n房东：有的，沙发床桌子都有，包水电网"}
+                onPaste={handleChatPaste}
+                placeholder={"粘贴微信聊天记录或截图 (Ctrl+V / Cmd+V)...\n\n例如：\n房东：这个房子在3楼，朝南的\n我：有家具吗？\n房东：有的，沙发床桌子都有，包水电网"}
                 className="min-h-[120px] text-sm"
                 maxLength={50000}
               />
+
+              {/* Image upload / preview */}
+              <input
+                type="file"
+                accept="image/*"
+                className="hidden"
+                ref={(el) => { chatImageInputRef.current = el; }}
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) handleChatImageFile(file);
+                  e.target.value = "";
+                }}
+              />
+              {chatImagePreview ? (
+                <div className="relative inline-block">
+                  <img
+                    src={chatImagePreview}
+                    alt="聊天截图"
+                    className="max-h-[200px] rounded-lg border border-gray-200"
+                  />
+                  <button
+                    type="button"
+                    onClick={clearChatImage}
+                    className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-xs hover:bg-red-600 shadow-sm"
+                  >
+                    X
+                  </button>
+                  <p className="text-xs text-green-600 mt-1.5 flex items-center gap-1">
+                    <Check className="w-3 h-3" /> 已添加截图
+                  </p>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => chatImageInputRef.current?.click()}
+                  className="w-full border-2 border-dashed border-gray-200 rounded-xl py-4 text-sm text-gray-400 hover:border-gray-300 hover:text-gray-500 transition-colors"
+                >
+                  粘贴截图到上方文本框，或点击此处上传图片
+                </button>
+              )}
+
               <Button
                 onClick={handleAnalyzeChat}
-                disabled={enrichMutation.isPending || !chatText.trim()}
+                disabled={enrichMutation.isPending || (!chatText.trim() && !chatImage)}
                 className="gap-2"
               >
                 {enrichMutation.isPending ? (

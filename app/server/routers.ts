@@ -1040,7 +1040,9 @@ export const appRouter = router({
 
     enrichListingFromChat: adminProcedure
       .input(z.object({
-        chatText: z.string().min(1).max(50000),
+        chatText: z.string().max(50000).optional(),
+        imageBase64: z.string().optional(),
+        mimeType: z.string().optional(),
         existingListing: z.object({
           title: z.string().optional(),
           description: z.string().optional(),
@@ -1065,11 +1067,14 @@ export const appRouter = router({
         }),
       }))
       .mutation(async ({ input }) => {
+        if (!input.chatText?.trim() && !input.imageBase64) {
+          throw new TRPCError({ code: "BAD_REQUEST", message: "Provide chat text or an image" });
+        }
         const { invokeLLM } = await import("./_core/llm");
 
         const systemPrompt = `You are a real estate data enrichment assistant. You will receive:
 1. An existing rental listing with its current field values
-2. A WeChat chat conversation between an admin and a landlord/sublessor
+2. A WeChat chat conversation (text and/or screenshot) between an admin and a landlord/sublessor
 
 Your job is to extract ANY new or updated information from the chat that can improve the listing. Only return fields that have new information not already in the existing listing. If the chat confirms existing information, don't include it.
 
@@ -1096,13 +1101,26 @@ Return a JSON object with only the fields that should be updated. Also include:
 
 If nothing new can be extracted, return {"chatSummary": "聊天记录中未发现新的房源信息。"}`;
 
-        const userMessage = `Existing listing data:\n${JSON.stringify(input.existingListing, null, 2)}\n\nWeChat chat conversation:\n${input.chatText}`;
+        const userContent: Array<{ type: string; [key: string]: unknown }> = [];
+        userContent.push({
+          type: "text",
+          text: `Existing listing data:\n${JSON.stringify(input.existingListing, null, 2)}\n\n${input.chatText?.trim() ? `WeChat chat conversation:\n${input.chatText}` : "Analyze the WeChat chat screenshot below and extract any new listing information not already in the existing listing."}`,
+        });
+        if (input.imageBase64 && input.mimeType) {
+          userContent.push({
+            type: "image_url",
+            image_url: {
+              url: `data:${input.mimeType};base64,${input.imageBase64}`,
+              detail: "high",
+            },
+          });
+        }
 
         try {
           const result = await invokeLLM({
             messages: [
               { role: "system", content: systemPrompt },
-              { role: "user", content: userMessage },
+              { role: "user", content: userContent as any },
             ],
             maxTokens: 8192,
             responseFormat: { type: "json_object" },
