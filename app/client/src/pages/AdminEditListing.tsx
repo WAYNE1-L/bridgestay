@@ -115,9 +115,7 @@ export default function AdminEditListing() {
   const [chatText, setChatText] = useState("");
   const [chatResult, setChatResult] = useState<any>(null);
   const [selectedUpdates, setSelectedUpdates] = useState<Set<string>>(new Set());
-  const [chatImage, setChatImage] = useState<string | null>(null);
-  const [chatImageMime, setChatImageMime] = useState<string | null>(null);
-  const [chatImagePreview, setChatImagePreview] = useState<string | null>(null);
+  const [chatImages, setChatImages] = useState<Array<{ base64: string; mime: string; preview: string }>>([]);
   const chatImageInputRef = useState(() => ({ current: null as HTMLInputElement | null }))[0];
 
   // Populate form when listing loads
@@ -268,11 +266,9 @@ export default function AdminEditListing() {
         const reader = new FileReader();
         reader.onload = () => {
           const dataUrl = reader.result as string;
-          setChatImagePreview(dataUrl);
           const parts = dataUrl.split(",");
           const mime = parts[0].match(/data:(.*?);/)?.[1] || "image/png";
-          setChatImage(parts[1]);
-          setChatImageMime(mime);
+          setChatImages(prev => [...prev, { base64: parts[1], mime, preview: dataUrl }]);
         };
         reader.readAsDataURL(file);
         return;
@@ -285,28 +281,27 @@ export default function AdminEditListing() {
     const reader = new FileReader();
     reader.onload = () => {
       const dataUrl = reader.result as string;
-      setChatImagePreview(dataUrl);
       const parts = dataUrl.split(",");
       const mime = parts[0].match(/data:(.*?);/)?.[1] || "image/png";
-      setChatImage(parts[1]);
-      setChatImageMime(mime);
+      setChatImages(prev => [...prev, { base64: parts[1], mime, preview: dataUrl }]);
     };
     reader.readAsDataURL(file);
   };
 
-  const clearChatImage = () => {
-    setChatImage(null);
-    setChatImageMime(null);
-    setChatImagePreview(null);
+  const clearAllChatImages = () => {
+    setChatImages([]);
+  };
+
+  const removeChatImage = (index: number) => {
+    setChatImages(prev => prev.filter((_, i) => i !== index));
   };
 
   const handleAnalyzeChat = () => {
-    if (!form || (!chatText.trim() && !chatImage)) return;
+    if (!form || (!chatText.trim() && chatImages.length === 0)) return;
     setChatResult(null);
     enrichMutation.mutate({
       chatText: chatText.trim() || undefined,
-      imageBase64: chatImage || undefined,
-      mimeType: chatImageMime || undefined,
+      images: chatImages.length > 0 ? chatImages.map(img => ({ base64: img.base64, mime: img.mime })) : undefined,
       existingListing: {
         title: form.title || undefined,
         description: form.description || undefined,
@@ -515,30 +510,51 @@ export default function AdminEditListing() {
               <input
                 type="file"
                 accept="image/*"
+                multiple
                 className="hidden"
                 ref={(el) => { chatImageInputRef.current = el; }}
                 onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) handleChatImageFile(file);
+                  const files = e.target.files;
+                  if (files) {
+                    for (let i = 0; i < files.length; i++) {
+                      handleChatImageFile(files[i]);
+                    }
+                  }
                   e.target.value = "";
                 }}
               />
-              {chatImagePreview ? (
-                <div className="relative inline-block">
-                  <img
-                    src={chatImagePreview}
-                    alt="聊天截图"
-                    className="max-h-[200px] rounded-lg border border-gray-200"
-                  />
-                  <button
-                    type="button"
-                    onClick={clearChatImage}
-                    className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-xs hover:bg-red-600 shadow-sm"
-                  >
-                    X
-                  </button>
-                  <p className="text-xs text-green-600 mt-1.5 flex items-center gap-1">
-                    <Check className="w-3 h-3" /> 已添加截图
+              {chatImages.length > 0 ? (
+                <div className="space-y-2">
+                  <div className="flex flex-wrap gap-3">
+                    {chatImages.map((img, idx) => (
+                      <div key={idx} className="relative">
+                        <img
+                          src={img.preview}
+                          alt={`截图 ${idx + 1}`}
+                          className="h-[120px] rounded-lg border border-gray-200 object-cover"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removeChatImage(idx)}
+                          className="absolute -top-2 -right-2 w-6 h-6 bg-red-500 text-white rounded-full flex items-center justify-center text-xs hover:bg-red-600 shadow-sm"
+                        >
+                          X
+                        </button>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => chatImageInputRef.current?.click()}
+                      className="h-[120px] w-[100px] border-2 border-dashed border-gray-200 rounded-lg flex items-center justify-center text-gray-400 hover:border-gray-300 hover:text-gray-500 transition-colors text-2xl"
+                    >
+                      +
+                    </button>
+                  </div>
+                  <p className="text-xs text-green-600 flex items-center gap-1">
+                    <Check className="w-3 h-3" /> 已添加 {chatImages.length} 张截图
+                    <button type="button" onClick={clearAllChatImages} className="ml-2 text-red-400 hover:text-red-500 underline">
+                      清除全部
+                    </button>
                   </p>
                 </div>
               ) : (
@@ -547,13 +563,13 @@ export default function AdminEditListing() {
                   onClick={() => chatImageInputRef.current?.click()}
                   className="w-full border-2 border-dashed border-gray-200 rounded-xl py-4 text-sm text-gray-400 hover:border-gray-300 hover:text-gray-500 transition-colors"
                 >
-                  粘贴截图到上方文本框，或点击此处上传图片
+                  粘贴截图到上方文本框，或点击此处上传图片（支持多张）
                 </button>
               )}
 
               <Button
                 onClick={handleAnalyzeChat}
-                disabled={enrichMutation.isPending || (!chatText.trim() && !chatImage)}
+                disabled={enrichMutation.isPending || (!chatText.trim() && chatImages.length === 0)}
                 className="gap-2"
               >
                 {enrichMutation.isPending ? (

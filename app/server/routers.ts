@@ -1043,6 +1043,7 @@ export const appRouter = router({
         chatText: z.string().max(50000).optional(),
         imageBase64: z.string().optional(),
         mimeType: z.string().optional(),
+        images: z.array(z.object({ base64: z.string(), mime: z.string() })).optional(),
         existingListing: z.object({
           title: z.string().optional(),
           description: z.string().optional(),
@@ -1067,7 +1068,12 @@ export const appRouter = router({
         }),
       }))
       .mutation(async ({ input }) => {
-        if (!input.chatText?.trim() && !input.imageBase64) {
+        const allImages = input.images?.length
+          ? input.images
+          : input.imageBase64 && input.mimeType
+            ? [{ base64: input.imageBase64, mime: input.mimeType }]
+            : [];
+        if (!input.chatText?.trim() && allImages.length === 0) {
           throw new TRPCError({ code: "BAD_REQUEST", message: "Provide chat text or an image" });
         }
         const { invokeLLM } = await import("./_core/llm");
@@ -1106,11 +1112,11 @@ If nothing new can be extracted, return {"chatSummary": "聊天记录中未发�
           type: "text",
           text: `Existing listing data:\n${JSON.stringify(input.existingListing, null, 2)}\n\n${input.chatText?.trim() ? `WeChat chat conversation:\n${input.chatText}` : "Analyze the WeChat chat screenshot below and extract any new listing information not already in the existing listing."}`,
         });
-        if (input.imageBase64 && input.mimeType) {
+        for (const img of allImages) {
           userContent.push({
             type: "image_url",
             image_url: {
-              url: `data:${input.mimeType};base64,${input.imageBase64}`,
+              url: `data:${img.mime};base64,${img.base64}`,
               detail: "high",
             },
           });
