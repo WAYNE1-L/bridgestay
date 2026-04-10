@@ -1,5 +1,8 @@
 export function safeJsonArray(value: unknown): string[] {
-  if (!value || typeof value !== "string") return [];
+  if (!value) return [];
+  // Already a parsed array (Drizzle auto-parses json columns)
+  if (Array.isArray(value)) return value.map(String);
+  if (typeof value !== "string") return [];
   const trimmed = value.trim();
   if (trimmed.startsWith("[")) {
     try {
