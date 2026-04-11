@@ -989,6 +989,41 @@ export const appRouter = router({
         }
       }),
 
+    extractBatchFromWeChat: adminProcedure
+      .input(z.object({ text: z.string().min(10) }))
+      .mutation(async ({ input }) => {
+        const { extractListingFromWeChat } = await import("./wechat-import");
+
+        // Split by "---" separator, or by numbered patterns like "1." "2." etc
+        let chunks: string[];
+        if (input.text.includes("---")) {
+          chunks = input.text.split(/\n---+\n/).map(c => c.trim()).filter(c => c.length > 20);
+        } else {
+          // Split by numbered pattern: lines starting with "1." "2." etc at the beginning
+          chunks = input.text.split(/\n(?=\d+\.\s*[^\d])/).map(c => c.trim()).filter(c => c.length > 20);
+        }
+
+        if (chunks.length <= 1) {
+          // Not actually multiple listings, just extract as single
+          chunks = [input.text];
+        }
+
+        console.log(`[Batch Import] Split into ${chunks.length} chunks`);
+
+        const results = [];
+        for (const chunk of chunks) {
+          try {
+            const result = await extractListingFromWeChat({ text: chunk });
+            results.push({ success: true as const, listing: result, sourceText: chunk.slice(0, 100) });
+          } catch (err) {
+            const msg = err instanceof Error ? err.message : "Extraction failed";
+            results.push({ success: false as const, error: msg, sourceText: chunk.slice(0, 100) });
+          }
+        }
+
+        return { total: chunks.length, results };
+      }),
+
     /**
      * Geocode a US address using Nominatim (free, no key required) and
      * find nearby universities from the BridgeStay DB using the Haversine

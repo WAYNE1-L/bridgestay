@@ -450,6 +450,11 @@ export default function ImportListing() {
   const [savedId, setSavedId] = useState<number | null>(null);
   const [isPublished, setIsPublished] = useState(false);
 
+  // ── Batch import state ───────────────────────────────────────────────────
+  const [batchMode, setBatchMode] = useState(false);
+  const [batchResults, setBatchResults] = useState<Array<{ success: boolean; listing?: any; error?: string; sourceText: string }>>([]);
+  const [batchIndex, setBatchIndex] = useState(0);
+
   // ── AI skill analysis state ──────────────────────────────────────────────
   const [listingAnalysis, setListingAnalysis] = useState<SkillAnalysis | null>(null);
   const [listingAnalysisStatus, setListingAnalysisStatus] = useState<SkillStatus>("idle");
@@ -481,56 +486,76 @@ export default function ImportListing() {
 
   // ── Mutations ────────────────────────────────────────────────────────────
 
+  function loadExtractedIntoForm(data: any) {
+    const listingJson = JSON.stringify(data);
+    const shouldRunSubleaseReview = hasSubleaseSignal(data);
+    const nextForm = applyExtracted(makeDefaultForm(), data);
+
+    setListingAnalysis(null);
+    setListingAnalysisStatus("loading");
+    setSubleaseAnalysis(null);
+    setSubleaseAnalysisStatus(shouldRunSubleaseReview ? "loading" : "idle");
+    setIsListingSuggestionsOpen(false);
+    setIsSubleaseReviewOpen(false);
+    hasTrackedSuggestionsShownRef.current = false;
+    hasTrackedSubleaseReviewShownRef.current = false;
+    usedTitleAssistRef.current = false;
+    usedTagsAssistRef.current = false;
+    usedJumpAssistRef.current = false;
+    hasTrackedPublishAfterAiAssistRef.current = false;
+
+    setExtracted(data);
+    setForm(nextForm);
+    if (
+      data.address &&
+      typeof data.latitude === "number" &&
+      typeof data.longitude === "number"
+    ) {
+      setGeocodeStatus("found");
+      setGeocodedData({
+        latitude: data.latitude,
+        longitude: data.longitude,
+        displayName: [data.address, data.city, data.state, data.zipCode]
+          .filter(Boolean)
+          .join(", "),
+        nearbyUniversities: [],
+      });
+    } else {
+      setGeocodeStatus("idle");
+      setGeocodedData(null);
+    }
+    setStep("review");
+
+    listingQualityMutation.mutate({ listingJson });
+
+    if (shouldRunSubleaseReview) {
+      subleaseRiskMutation.mutate({
+        skillName: "sublease-risk-analyst",
+        question:
+          "请用简体中文审查这条已提取的转租房源，重点指出风险点、正面因素、建议下一步和缺失信息。输出内容面向 BridgeStay 管理员内部审核，不要面向公开用户。",
+        context: listingJson,
+      });
+    }
+  }
+
   const extractMutation = trpc.listings.extractFromWeChat.useMutation({
     onSuccess(data) {
-      const listingJson = JSON.stringify(data);
-      const shouldRunSubleaseReview = hasSubleaseSignal(data);
-      const nextForm = applyExtracted(makeDefaultForm(), data);
+      loadExtractedIntoForm(data);
+    },
+    onError(err) {
+      toast.error(err.message);
+    },
+  });
 
-      setListingAnalysis(null);
-      setListingAnalysisStatus("loading");
-      setSubleaseAnalysis(null);
-      setSubleaseAnalysisStatus(shouldRunSubleaseReview ? "loading" : "idle");
-      setIsListingSuggestionsOpen(false);
-      setIsSubleaseReviewOpen(false);
-      hasTrackedSuggestionsShownRef.current = false;
-      hasTrackedSubleaseReviewShownRef.current = false;
-      usedTitleAssistRef.current = false;
-      usedTagsAssistRef.current = false;
-      usedJumpAssistRef.current = false;
-      hasTrackedPublishAfterAiAssistRef.current = false;
-
-      setExtracted(data);
-      setForm(nextForm);
-      if (
-        data.address &&
-        typeof data.latitude === "number" &&
-        typeof data.longitude === "number"
-      ) {
-        setGeocodeStatus("found");
-        setGeocodedData({
-          latitude: data.latitude,
-          longitude: data.longitude,
-          displayName: [data.address, data.city, data.state, data.zipCode]
-            .filter(Boolean)
-            .join(", "),
-          nearbyUniversities: [],
-        });
-      } else {
-        setGeocodeStatus("idle");
-        setGeocodedData(null);
-      }
-      setStep("review");
-
-      listingQualityMutation.mutate({ listingJson });
-
-      if (shouldRunSubleaseReview) {
-        subleaseRiskMutation.mutate({
-          skillName: "sublease-risk-analyst",
-          question:
-            "请用简体中文审查这条已提取的转租房源，重点指出风险点、正面因素、建议下一步和缺失信息。输出内容面向 BridgeStay 管理员内部审核，不要面向公开用户。",
-          context: listingJson,
-        });
+  const batchExtractMutation = trpc.listings.extractBatchFromWeChat.useMutation({
+    onSuccess(data) {
+      toast.success(`Extracted ${data.results.filter(r => r.success).length}/${data.total} listings`);
+      setBatchResults(data.results);
+      setBatchIndex(0);
+      // Load first successful result into review form
+      const first = data.results.find(r => r.success);
+      if (first?.listing) {
+        loadExtractedIntoForm(first.listing);
       }
     },
     onError(err) {
@@ -545,6 +570,22 @@ export default function ImportListing() {
         toast.error("Listing saved but could not determine its ID. Check your dashboard.");
         return;
       }
+
+      // Auto-advance to next batch item
+      if (batchResults.length > 0 && batchIndex < batchResults.length - 1) {
+        let nextSuccessIdx = batchIndex + 1;
+        while (nextSuccessIdx < batchResults.length && !batchResults[nextSuccessIdx].success) {
+          nextSuccessIdx++;
+        }
+        if (nextSuccessIdx < batchResults.length && batchResults[nextSuccessIdx].listing) {
+          setBatchIndex(nextSuccessIdx);
+          loadExtractedIntoForm(batchResults[nextSuccessIdx].listing);
+          setImages([]);
+          toast.info(`Saved! Moving to listing ${nextSuccessIdx + 1} of ${batchResults.length}`);
+          return; // Don't go to success step
+        }
+      }
+
       setSavedId(data.id);
       setIsPublished(false);
       setStep("success");
@@ -685,11 +726,15 @@ export default function ImportListing() {
     usedTagsAssistRef.current = false;
     usedJumpAssistRef.current = false;
     hasTrackedPublishAfterAiAssistRef.current = false;
-    extractMutation.mutate({
-      text: inputText.trim() || undefined,
-      imageBase64: imageData?.base64,
-      mimeType: imageData?.mimeType,
-    });
+    if (batchMode) {
+      batchExtractMutation.mutate({ text: inputText.trim() });
+    } else {
+      extractMutation.mutate({
+        text: inputText.trim() || undefined,
+        imageBase64: imageData?.base64,
+        mimeType: imageData?.mimeType,
+      });
+    }
   }
 
   const update = <K extends keyof FormState>(key: K, value: FormState[K]) =>
@@ -844,6 +889,9 @@ export default function ImportListing() {
     hasTrackedPublishAfterAiAssistRef.current = false;
     setGeocodeStatus("idle");
     setGeocodedData(null);
+    setBatchResults([]);
+    setBatchIndex(0);
+    setBatchMode(false);
     if (fileInputRef.current) fileInputRef.current.value = "";
   }
 
@@ -965,15 +1013,23 @@ export default function ImportListing() {
             <CardContent className="space-y-6">
               {/* Text input — always visible, primary input */}
               <div className="space-y-2">
-                <Label htmlFor="listing-text" className="flex items-center gap-2">
-                  <MessageSquare className="w-4 h-4 text-green-500" />
-                  Paste listing text
-                </Label>
+                <div className="flex items-center justify-between">
+                  <Label htmlFor="listing-text" className="flex items-center gap-2">
+                    <MessageSquare className="w-4 h-4 text-green-500" />
+                    Paste listing text
+                  </Label>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-muted-foreground">Batch Mode</span>
+                    <Switch checked={batchMode} onCheckedChange={setBatchMode} />
+                  </div>
+                </div>
                 <Textarea
                   id="listing-text"
                   value={inputText}
                   onChange={(e) => setInputText(e.target.value)}
-                  placeholder={`Paste WeChat listing text here — Chinese or English\n\nExample:\n整洁2室1卫公寓出租\n位于洛杉矶Westwood区，近UCLA\n月租$1800，押金$1800，含水电\n宠物友好，含停车位，带家具\n可入住：2026年5月1日，合同至12月\n转租 / 微信：landlord_wx123`}
+                  placeholder={batchMode
+                    ? `Paste multiple listings separated by --- or numbered (1. 2. 3.)\n\nExample:\n1. 暑期转租 2B2B 近UCLA 月租$1800...\n---\n2. Studio 出租 Downtown LA $1200...`
+                    : `Paste WeChat listing text here — Chinese or English\n\nExample:\n整洁2室1卫公寓出租\n位于洛杉矶Westwood区，近UCLA\n月租$1800，押金$1800，含水电\n宠物友好，含停车位，带家具\n可入住：2026年5月1日，合同至12月\n转租 / 微信：landlord_wx123`}
                   className="h-52 font-mono text-sm resize-none"
                 />
               </div>
@@ -1035,18 +1091,18 @@ export default function ImportListing() {
 
               <Button
                 onClick={handleExtract}
-                disabled={extractMutation.isPending}
+                disabled={extractMutation.isPending || batchExtractMutation.isPending}
                 className="w-full gap-2"
                 size="lg"
               >
-                {extractMutation.isPending ? (
+                {(extractMutation.isPending || batchExtractMutation.isPending) ? (
                   <>
                     <Loader2 className="w-4 h-4 animate-spin" /> Extracting
                     with AI…
                   </>
                 ) : (
                   <>
-                    <Wand2 className="w-4 h-4" /> Extract with AI
+                    <Wand2 className="w-4 h-4" /> {batchMode ? "Extract Batch with AI" : "Extract with AI"}
                   </>
                 )}
               </Button>
@@ -1061,6 +1117,20 @@ export default function ImportListing() {
         {/* ── STEP 2: REVIEW & EDIT ────────────────────────────────────── */}
         {step === "review" && extracted && (
           <div className="space-y-5">
+            {/* Batch progress */}
+            {batchResults.length > 1 && (
+              <div className="flex items-center justify-between bg-primary/5 rounded-lg px-4 py-3">
+                <span className="text-sm font-medium">
+                  Listing {batchIndex + 1} of {batchResults.length}
+                </span>
+                <div className="flex gap-2">
+                  <span className="text-xs text-muted-foreground">
+                    {batchResults.filter(r => r.success).length} extracted successfully
+                  </span>
+                </div>
+              </div>
+            )}
+
             {/* Confidence banner */}
             {(() => {
               const cfg = CONFIDENCE[extracted.confidence];
@@ -2031,7 +2101,7 @@ export default function ImportListing() {
                   </>
                   ) : (
                     <>
-                    Save Listing <ChevronRight className="w-4 h-4" />
+                    {batchResults.length > 1 && batchIndex < batchResults.length - 1 ? "Save & Next" : "Save Listing"} <ChevronRight className="w-4 h-4" />
                     </>
                   )}
                 </Button>
