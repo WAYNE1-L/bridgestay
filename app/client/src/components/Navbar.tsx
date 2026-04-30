@@ -1,7 +1,7 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { motion, AnimatePresence } from "framer-motion";
-import { Menu, X, Home, Search, FileText, User, LogOut, Globe, Settings, LogIn, Users } from "lucide-react";
+import { Menu, X, Home, Search, FileText, User, LogOut, Globe, Settings, LogIn, Users, BarChart3, Calculator } from "lucide-react";
 import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { BridgeStayLogo } from "./BridgeStayLogo";
@@ -21,11 +21,15 @@ export function Navbar() {
   const navLinks = isAdmin ? [
     { href: "/", label: t("nav.home"), icon: Home },
     { href: "/apartments", label: t("nav.listings"), icon: Search },
+    { href: "/analytics", label: t("nav.analytics"), icon: BarChart3 },
+    { href: "/calculator", label: t("nav.calculator"), icon: Calculator },
     { href: "/admin/import", label: t("nav.aiImport"), icon: FileText },
     { href: "/admin/outreach", label: "\u8054\u7CFB\u8FFD\u8E2A", icon: Users },
   ] : [
     { href: "/", label: t("nav.home"), icon: Home },
     { href: "/apartments", label: t("nav.listings"), icon: Search },
+    { href: "/analytics", label: t("nav.analytics"), icon: BarChart3 },
+    { href: "/calculator", label: t("nav.calculator"), icon: Calculator },
   ];
 
   useEffect(() => {

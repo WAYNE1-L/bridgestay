@@ -20,6 +20,12 @@ import Investors from "./pages/Investors";
 import ImportListing from "./pages/ImportListing";
 import AdminOutreach from "./pages/AdminOutreach";
 import AdminEditListing from "./pages/AdminEditListing";
+import AnalyticsHome from "./pages/analytics/AnalyticsHome";
+import AnalyticsDashboard from "./pages/analytics/AnalyticsDashboard";
+import AnalyticsRoi from "./pages/analytics/AnalyticsRoi";
+import AnalyticsReports from "./pages/analytics/AnalyticsReports";
+import CalculatorPage from "./pages/calculator/CalculatorPage";
+import SubleasePage from "./pages/calculator/SubleasePage";
 import { AIConsultant } from "./components/AIConsultant";
 import { AdminRoute } from "./components/AdminRoute";
 import { useAuth } from "./_core/hooks/useAuth";
@@ -113,6 +119,12 @@ function Router() {
       <Route path={"/admin/edit/:id"} component={AdminEditListingPage} />
       <Route path={"/investors"} component={Investors} />
       <Route path={"/import-listing"} component={LegacyImportPage} />
+      <Route path={"/analytics"} component={AnalyticsHome} />
+      <Route path={"/analytics/dashboard"} component={AnalyticsDashboard} />
+      <Route path={"/analytics/roi"} component={AnalyticsRoi} />
+      <Route path={"/analytics/reports"} component={AnalyticsReports} />
+      <Route path={"/calculator"} component={CalculatorPage} />
+      <Route path={"/calculator/sublease"} component={SubleasePage} />
       <Route path={"/404"} component={NotFound} />
       <Route component={NotFound} />
     </Switch>
