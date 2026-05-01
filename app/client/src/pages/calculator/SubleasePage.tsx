@@ -302,8 +302,8 @@ function SubleaseHeader({
   return (
     <header className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
       <div>
-        <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
-          <Bed className="h-7 w-7 text-orange-500" />
+        <h1 className="text-2xl font-semibold tracking-tight flex flex-wrap items-center gap-x-2 gap-y-1">
+          <Bed className="h-7 w-7 text-orange-500 shrink-0" />
           Sublease Calculator
           <span className="text-muted-foreground font-normal">/ 转租收益计算器</span>
         </h1>
