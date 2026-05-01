@@ -312,33 +312,61 @@ function PortfolioSummary({
   outputs: ReturnType<typeof calculatePortfolio>;
   horizon: number;
 }) {
+  // "Empty state" = nothing entered yet. Detected by all four headline
+  // numbers being exactly zero. We dim the KPI values and show a small
+  // banner so the page reads as "waiting for input" rather than "loaded
+  // and the deal is worthless".
+  const isEmpty =
+    outputs.totalMonthlyNet === 0 &&
+    outputs.totalSetupCost === 0 &&
+    outputs.totalPeriodNet === 0 &&
+    (outputs.portfolioPaybackMonths === 0 || outputs.portfolioPaybackMonths === Infinity);
+
   const netColor = (n: number) =>
-    n > 0 ? "text-emerald-600" : n < 0 ? "text-rose-600" : "text-gray-700";
+    isEmpty
+      ? "text-muted-foreground/60"
+      : n > 0
+        ? "text-emerald-600"
+        : n < 0
+          ? "text-rose-600"
+          : "text-gray-700";
 
   return (
-    <section className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-      <KpiCard
-        label="Total monthly net"
-        labelZh="月均净利润"
-        value={fmtMoney(outputs.totalMonthlyNet)}
-        valueClass={netColor(outputs.totalMonthlyNet)}
-      />
-      <KpiCard
-        label="Total setup cost"
-        labelZh="一次性投入"
-        value={fmtMoney(outputs.totalSetupCost)}
-      />
-      <KpiCard
-        label="Portfolio payback"
-        labelZh="回本月数"
-        value={fmtPayback(outputs.portfolioPaybackMonths)}
-      />
-      <KpiCard
-        label={`${horizon}-mo total net`}
-        labelZh={`${horizon} 月总净利`}
-        value={fmtMoney(outputs.totalPeriodNet)}
-        valueClass={netColor(outputs.totalPeriodNet)}
-      />
+    <section className="space-y-3">
+      {isEmpty && (
+        <p className="text-xs text-muted-foreground italic">
+          Add property data below — KPIs and charts update live. /
+          在下方填入房源数据,KPI 与图表会实时更新。
+        </p>
+      )}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <KpiCard
+          label="Total monthly net"
+          labelZh="月均净利润"
+          value={fmtMoney(outputs.totalMonthlyNet)}
+          valueClass={netColor(outputs.totalMonthlyNet)}
+          dim={isEmpty}
+        />
+        <KpiCard
+          label="Total setup cost"
+          labelZh="一次性投入"
+          value={fmtMoney(outputs.totalSetupCost)}
+          dim={isEmpty}
+        />
+        <KpiCard
+          label="Portfolio payback"
+          labelZh="回本月数"
+          value={fmtPayback(outputs.portfolioPaybackMonths)}
+          dim={isEmpty}
+        />
+        <KpiCard
+          label={`${horizon}-mo total net`}
+          labelZh={`${horizon} 月总净利`}
+          value={fmtMoney(outputs.totalPeriodNet)}
+          valueClass={netColor(outputs.totalPeriodNet)}
+          dim={isEmpty}
+        />
+      </div>
     </section>
   );
 }
@@ -348,11 +376,13 @@ function KpiCard({
   labelZh,
   value,
   valueClass,
+  dim,
 }: {
   label: string;
   labelZh: string;
   value: string;
   valueClass?: string;
+  dim?: boolean;
 }) {
   return (
     <Card>
@@ -361,7 +391,13 @@ function KpiCard({
           {label}
         </div>
         <div className="text-[11px] text-muted-foreground">{labelZh}</div>
-        <div className={`mt-2 text-2xl font-bold ${valueClass ?? ""}`}>{value}</div>
+        <div
+          className={`mt-2 text-2xl font-bold ${
+            valueClass ?? (dim ? "text-muted-foreground/60" : "")
+          }`}
+        >
+          {value}
+        </div>
       </CardContent>
     </Card>
   );
