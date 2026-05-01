@@ -4,7 +4,7 @@ Tracks unattended autonomous rounds against this repo. Each round runs on its ow
 
 | # | Round | Branch | Baseline tag | Status | Final report |
 |---|---|---|---|---|---|
-| 1 | Lehi Realtor.com scraper MVP | `feat/lehi-scraper-r1` | `harness-r1-baseline` | in progress | `FINAL_REPORT.md` (R1) |
+| 1 | Lehi Realtor.com scraper MVP | `feat/lehi-scraper-r1` | `harness-r1-baseline` | **complete (Phase 7 of 8)** | `FINAL_REPORT.md` |
 
 ---
 
