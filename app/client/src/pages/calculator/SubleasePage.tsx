@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import {
   Bed,
   ChevronDown,
@@ -38,6 +38,11 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from "@/components/ui/collapsible";
 import { Navbar } from "@/components/Navbar";
 
 import {
@@ -587,6 +592,35 @@ function PropertyCard({
   onRemove: () => void;
 }) {
   const [expanded, setExpanded] = useState(true);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+
+  // Track what we've auto-suggested for offSeasonAdr so we can keep updating
+  // it while peakAdr changes — but stop the moment the user types over it.
+  const lastAutoOffAdrRef = useRef<number | null>(null);
+
+  // Auto-suggest off-season ADR ≈ 56% of peak ADR. Fires when peakAdr
+  // changes and offSeasonAdr is still 0 OR is exactly the value we last
+  // suggested (i.e. user hasn't manually overridden it).
+  useEffect(() => {
+    if (property.peakAdr <= 0) return;
+    const suggested = Math.round(property.peakAdr * 0.56);
+    const offUntouchedByUser =
+      property.offSeasonAdr === 0 ||
+      property.offSeasonAdr === lastAutoOffAdrRef.current;
+    if (!offUntouchedByUser) return;
+    if (property.offSeasonAdr === suggested) return;
+    lastAutoOffAdrRef.current = suggested;
+    onChange({ ...property, offSeasonAdr: suggested });
+    // Intentionally only depend on peakAdr — onChange/property change every
+    // render and would create an infinite loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [property.peakAdr]);
+
+  const offAdrHint =
+    property.peakAdr > 0
+      ? `Auto: ~$${Math.round(property.peakAdr * 0.56)} (56% of peak)`
+      : undefined;
+
   const netColor =
     outputs.monthlyNetProfit > 0
       ? "text-emerald-600"
@@ -639,253 +673,279 @@ function PropertyCard({
 
         {expanded && (
           <div className="mt-5 space-y-6">
-            <Section title="1. Identification / 识别">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <TextField
-                  label="Nickname"
-                  labelZh="备注名"
-                  value={property.nickname}
-                  onChange={(v) => set("nickname", v)}
-                  placeholder="e.g. SLC summer A"
-                />
-              </div>
-            </Section>
+            {/* === Essential fields (always visible) ===================== */}
+            <section className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <TextField
+                label="Property nickname"
+                labelZh="房源昵称"
+                value={property.nickname}
+                onChange={(v) => set("nickname", v)}
+                placeholder="e.g. SLC summer A"
+              />
+              <div /> {/* spacer to keep the 2-col rhythm */}
 
-            <Section title="2. Lease cost / 收房成本">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                <NumField
-                  label="Monthly rent to owner"
-                  labelZh="付给业主月租"
-                  value={property.monthlyRentToOwner}
-                  onChange={(v) => set("monthlyRentToOwner", v)}
-                  step={50}
-                  suffix="$"
-                  tooltip="Monthly rent you pay to the property owner / 你每月付给业主的租金"
-                />
-                <NumField
-                  label="Initial deposit"
-                  labelZh="押金"
-                  value={property.initialDeposit}
-                  onChange={(v) => set("initialDeposit", v)}
-                  step={50}
-                  suffix="$"
-                />
-                <NumField
-                  label="Lease length"
-                  labelZh="签约月数"
-                  value={property.leaseLengthMonths}
-                  onChange={(v) => set("leaseLengthMonths", v)}
-                  min={1}
-                  max={24}
-                  suffix="mo"
-                />
-                <ToggleField
-                  label="Deposit refundable"
-                  labelZh="押金可退"
-                  checked={property.depositRefundable}
-                  onChange={(v) => set("depositRefundable", v)}
-                />
-              </div>
-            </Section>
+              <NumField
+                label="Monthly rent to owner"
+                labelZh="付给业主月租"
+                value={property.monthlyRentToOwner}
+                onChange={(v) => set("monthlyRentToOwner", v)}
+                step={50}
+                suffix="$/mo"
+                tooltip="What you pay the property owner each month / 你每月付给业主的租金"
+              />
+              <NumField
+                label="Lease length"
+                labelZh="签约月数"
+                value={property.leaseLengthMonths}
+                onChange={(v) => set("leaseLengthMonths", v)}
+                min={1}
+                max={24}
+                suffix="mo"
+              />
 
-            <Section title="3. Setup cost / 一次性投入">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                <NumField
-                  label="Furniture"
-                  labelZh="家具"
-                  value={property.furnitureCost}
-                  onChange={(v) => set("furnitureCost", v)}
-                  step={50}
-                  suffix="$"
-                />
-                <NumField
-                  label="Renovation"
-                  labelZh="装修"
-                  value={property.renovationCost}
-                  onChange={(v) => set("renovationCost", v)}
-                  step={100}
-                  suffix="$"
-                />
-                <NumField
-                  label="Initial deep clean"
-                  labelZh="首次深度清洁"
-                  value={property.initialDeepClean}
-                  onChange={(v) => set("initialDeepClean", v)}
-                  step={20}
-                  suffix="$"
-                />
-                <NumField
-                  label="Photography"
-                  labelZh="拍照费"
-                  value={property.photographyCost}
-                  onChange={(v) => set("photographyCost", v)}
-                  step={20}
-                  suffix="$"
-                />
-              </div>
-            </Section>
+              <NumField
+                label="Peak ADR"
+                labelZh="旺季每晚"
+                value={property.peakAdr}
+                onChange={(v) => set("peakAdr", v)}
+                step={5}
+                suffix="$/night"
+                tooltip="Average daily rate during peak season (e.g. May–Sep summer in SLC) / 旺季平均每晚价"
+              />
+              <NumField
+                label="Off-season ADR"
+                labelZh="淡季每晚"
+                value={property.offSeasonAdr}
+                onChange={(v) => {
+                  // User typed → stop auto-suggesting; remember new value
+                  lastAutoOffAdrRef.current = null;
+                  set("offSeasonAdr", v);
+                }}
+                step={5}
+                suffix="$/night"
+                hint={offAdrHint}
+              />
 
-            <Section title="4. Airbnb revenue / 短租营收">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-                <NumField
-                  label="Peak ADR"
-                  labelZh="旺季每晚"
-                  value={property.peakAdr}
-                  onChange={(v) => set("peakAdr", v)}
-                  step={5}
-                  suffix="$"
-                  tooltip="Average daily rate during peak season / 旺季平均每晚价"
-                />
-                <NumField
-                  label="Off-season ADR"
-                  labelZh="淡季每晚"
-                  value={property.offSeasonAdr}
-                  onChange={(v) => set("offSeasonAdr", v)}
-                  step={5}
-                  suffix="$"
-                />
-                <PctField
-                  label="Occupancy rate"
-                  labelZh="占用率"
-                  value={property.occupancyRate}
-                  onChange={(v) => set("occupancyRate", v)}
-                  step={1}
-                  max={100}
-                />
-                <NumField
-                  label="Avg nights / booking"
-                  labelZh="平均每次入住"
-                  value={property.avgNightsPerBooking}
-                  onChange={(v) => set("avgNightsPerBooking", v)}
-                  step={0.5}
-                  min={1}
-                  suffix="night"
-                />
-              </div>
-              <div className="mt-4">
-                <MonthRangeField
-                  label="Peak season"
-                  labelZh="旺季月份"
-                  startMonth={property.peakSeasonStartMonth}
-                  endMonth={property.peakSeasonEndMonth}
-                  onStartChange={(v) => set("peakSeasonStartMonth", v)}
-                  onEndChange={(v) => set("peakSeasonEndMonth", v)}
-                  tooltip="Wraps around year-end (e.g. Nov→Feb is valid) / 可跨年(如 11月→2月)"
-                />
-              </div>
-            </Section>
+              <PctField
+                label="Occupancy rate"
+                labelZh="占用率"
+                value={property.occupancyRate}
+                onChange={(v) => set("occupancyRate", v)}
+                step={1}
+                max={100}
+                tooltip="Estimated % of nights booked. SLC summer realistic: 60–75% / 估算每月入住率"
+              />
+              <div /> {/* spacer */}
+            </section>
 
-            <Section title="5. Operating cost / 月运营成本">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                <NumField
-                  label="Utilities"
-                  labelZh="水电网"
-                  value={property.utilities}
-                  onChange={(v) => set("utilities", v)}
-                  step={10}
-                  suffix="$/mo"
-                  disabled={property.utilitiesIncludedInLease}
-                />
-                <ToggleField
-                  label="Utilities incl. in lease"
-                  labelZh="业主包水电"
-                  checked={property.utilitiesIncludedInLease}
-                  onChange={(v) => set("utilitiesIncludedInLease", v)}
-                />
-                <NumField
-                  label="Cleaning per turnover"
-                  labelZh="每次清洁"
-                  value={property.cleaningPerTurnover}
-                  onChange={(v) => set("cleaningPerTurnover", v)}
-                  step={5}
-                  suffix="$"
-                  disabled={property.cleaningPassedToGuest}
-                />
-                <ToggleField
-                  label="Cleaning passed to guest"
-                  labelZh="清洁费转嫁客人"
-                  checked={property.cleaningPassedToGuest}
-                  onChange={(v) => set("cleaningPassedToGuest", v)}
-                />
-                <NumField
-                  label="Supplies"
-                  labelZh="日用品"
-                  value={property.supplies}
-                  onChange={(v) => set("supplies", v)}
-                  step={10}
-                  suffix="$/mo"
-                />
-                <NumField
-                  label="Maintenance reserve"
-                  labelZh="维修预留"
-                  value={property.maintenanceReserve}
-                  onChange={(v) => set("maintenanceReserve", v)}
-                  step={10}
-                  suffix="$/mo"
-                />
-                <NumField
-                  label="STR insurance"
-                  labelZh="短租保险"
-                  value={property.strInsurance}
-                  onChange={(v) => set("strInsurance", v)}
-                  step={5}
-                  suffix="$/mo"
-                />
-              </div>
-            </Section>
-
-            <Section title="6. Risk / 风险">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <PctField
-                  label="Damage / deposit hold rate"
-                  labelZh="押金扣除概率"
-                  value={property.damageDepositHoldRate}
-                  onChange={(v) => set("damageDepositHoldRate", v)}
-                  step={0.5}
-                  max={50}
-                  tooltip="Approx % of revenue lost to damage holds / 估计每月有多少营收被押金扣留"
-                />
-              </div>
-            </Section>
-
-            <Section title="7. Platform & tax / 平台与税">
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                <NumField
-                  label="Airbnb host fee"
-                  labelZh="Airbnb 抽佣"
-                  value={property.airbnbHostFeeRate * 100}
-                  onChange={(v) => set("airbnbHostFeeRate", v / 100)}
-                  step={0.5}
-                  max={20}
-                  suffix="%"
-                  tooltip="Locked at 3% by default / 默认 3%"
-                />
-                <ToggleField
-                  label="Lodging tax handled by Airbnb"
-                  labelZh="Airbnb 代收住宿税"
-                  checked={property.lodgingTaxHandledByAirbnb}
-                  onChange={(v) => set("lodgingTaxHandledByAirbnb", v)}
-                />
-                {!property.lodgingTaxHandledByAirbnb && (
-                  <PctField
-                    label="Manual lodging tax"
-                    labelZh="手动住宿税率"
-                    value={property.manualLodgingTaxRate}
-                    onChange={(v) => set("manualLodgingTaxRate", v)}
-                    step={0.5}
-                    max={30}
+            {/* === Advanced (collapsed by default) ======================= */}
+            <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
+              <CollapsibleTrigger asChild>
+                <button
+                  type="button"
+                  className="flex items-center gap-2 text-sm font-medium text-gray-700 hover:text-gray-900 transition-colors"
+                >
+                  <ChevronDown
+                    className={`h-4 w-4 transition-transform ${
+                      advancedOpen ? "rotate-180" : ""
+                    }`}
                   />
-                )}
-                <PctField
-                  label="Income tax"
-                  labelZh="所得税率"
-                  value={property.incomeTaxRate}
-                  onChange={(v) => set("incomeTaxRate", v)}
-                  step={1}
-                  max={50}
-                />
-              </div>
-            </Section>
+                  Advanced settings / 高级设置
+                </button>
+              </CollapsibleTrigger>
+              <CollapsibleContent className="pt-4 space-y-6">
+                <Section title="Setup cost / 一次性投入">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                    <NumField
+                      label="Furniture"
+                      labelZh="家具"
+                      value={property.furnitureCost}
+                      onChange={(v) => set("furnitureCost", v)}
+                      step={50}
+                      suffix="$"
+                    />
+                    <NumField
+                      label="Renovation"
+                      labelZh="装修"
+                      value={property.renovationCost}
+                      onChange={(v) => set("renovationCost", v)}
+                      step={100}
+                      suffix="$"
+                    />
+                    <NumField
+                      label="Initial deep clean"
+                      labelZh="首次深度清洁"
+                      value={property.initialDeepClean}
+                      onChange={(v) => set("initialDeepClean", v)}
+                      step={20}
+                      suffix="$"
+                    />
+                    <NumField
+                      label="Photography"
+                      labelZh="拍照费"
+                      value={property.photographyCost}
+                      onChange={(v) => set("photographyCost", v)}
+                      step={20}
+                      suffix="$"
+                    />
+                  </div>
+                </Section>
+
+                <Section title="Revenue tuning / 收入参数微调">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <MonthRangeField
+                      label="Peak season"
+                      labelZh="旺季月份"
+                      startMonth={property.peakSeasonStartMonth}
+                      endMonth={property.peakSeasonEndMonth}
+                      onStartChange={(v) => set("peakSeasonStartMonth", v)}
+                      onEndChange={(v) => set("peakSeasonEndMonth", v)}
+                      tooltip="Wraps around year-end (e.g. Nov→Feb is valid) / 可跨年(如 11月→2月)"
+                    />
+                    <NumField
+                      label="Avg nights / booking"
+                      labelZh="平均每次入住"
+                      value={property.avgNightsPerBooking}
+                      onChange={(v) => set("avgNightsPerBooking", v)}
+                      step={0.5}
+                      min={1}
+                      suffix="night"
+                    />
+                  </div>
+                </Section>
+
+                <Section title="Lease details / 合同细节">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <NumField
+                      label="Initial deposit"
+                      labelZh="押金"
+                      value={property.initialDeposit}
+                      onChange={(v) => set("initialDeposit", v)}
+                      step={50}
+                      suffix="$"
+                    />
+                    <ToggleField
+                      label="Deposit refundable"
+                      labelZh="押金可退"
+                      checked={property.depositRefundable}
+                      onChange={(v) => set("depositRefundable", v)}
+                    />
+                  </div>
+                </Section>
+
+                <Section title="Operating cost / 月运营成本">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <NumField
+                      label="Utilities"
+                      labelZh="水电网"
+                      value={property.utilities}
+                      onChange={(v) => set("utilities", v)}
+                      step={10}
+                      suffix="$/mo"
+                      disabled={property.utilitiesIncludedInLease}
+                    />
+                    <ToggleField
+                      label="Utilities incl. in lease"
+                      labelZh="业主包水电"
+                      checked={property.utilitiesIncludedInLease}
+                      onChange={(v) => set("utilitiesIncludedInLease", v)}
+                    />
+                    <NumField
+                      label="Cleaning per turnover"
+                      labelZh="每次清洁"
+                      value={property.cleaningPerTurnover}
+                      onChange={(v) => set("cleaningPerTurnover", v)}
+                      step={5}
+                      suffix="$"
+                      disabled={property.cleaningPassedToGuest}
+                    />
+                    <ToggleField
+                      label="Cleaning passed to guest"
+                      labelZh="清洁费转嫁客人"
+                      checked={property.cleaningPassedToGuest}
+                      onChange={(v) => set("cleaningPassedToGuest", v)}
+                    />
+                    <NumField
+                      label="Supplies"
+                      labelZh="日用品"
+                      value={property.supplies}
+                      onChange={(v) => set("supplies", v)}
+                      step={10}
+                      suffix="$/mo"
+                    />
+                    <NumField
+                      label="Maintenance reserve"
+                      labelZh="维修预留"
+                      value={property.maintenanceReserve}
+                      onChange={(v) => set("maintenanceReserve", v)}
+                      step={10}
+                      suffix="$/mo"
+                    />
+                    <NumField
+                      label="STR insurance"
+                      labelZh="短租保险"
+                      value={property.strInsurance}
+                      onChange={(v) => set("strInsurance", v)}
+                      step={5}
+                      suffix="$/mo"
+                    />
+                  </div>
+                </Section>
+
+                <Section title="Risk / 风险">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <PctField
+                      label="Damage / deposit hold rate"
+                      labelZh="押金扣除概率"
+                      value={property.damageDepositHoldRate}
+                      onChange={(v) => set("damageDepositHoldRate", v)}
+                      step={0.5}
+                      max={50}
+                      tooltip="Approx % of revenue lost to damage holds / 估计每月有多少营收被押金扣留"
+                    />
+                  </div>
+                </Section>
+
+                <Section title="Platform & tax / 平台与税">
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                    <NumField
+                      label="Airbnb host fee"
+                      labelZh="Airbnb 抽佣"
+                      value={property.airbnbHostFeeRate * 100}
+                      onChange={(v) => set("airbnbHostFeeRate", v / 100)}
+                      step={0.5}
+                      max={20}
+                      suffix="%"
+                      tooltip="Locked at 3% by default / 默认 3%"
+                    />
+                    <ToggleField
+                      label="Lodging tax handled by Airbnb"
+                      labelZh="Airbnb 代收住宿税"
+                      checked={property.lodgingTaxHandledByAirbnb}
+                      onChange={(v) => set("lodgingTaxHandledByAirbnb", v)}
+                    />
+                    {!property.lodgingTaxHandledByAirbnb && (
+                      <PctField
+                        label="Manual lodging tax"
+                        labelZh="手动住宿税率"
+                        value={property.manualLodgingTaxRate}
+                        onChange={(v) => set("manualLodgingTaxRate", v)}
+                        step={0.5}
+                        max={30}
+                      />
+                    )}
+                    <PctField
+                      label="Income tax"
+                      labelZh="所得税率"
+                      value={property.incomeTaxRate}
+                      onChange={(v) => set("incomeTaxRate", v)}
+                      step={1}
+                      max={50}
+                    />
+                  </div>
+                </Section>
+              </CollapsibleContent>
+            </Collapsible>
           </div>
         )}
       </CardContent>
@@ -932,6 +992,7 @@ function NumField({
   max,
   suffix,
   tooltip,
+  hint,
   disabled,
 }: {
   label: string;
@@ -943,6 +1004,7 @@ function NumField({
   max?: number;
   suffix?: string;
   tooltip?: string;
+  hint?: string;
   disabled?: boolean;
 }) {
   // Display empty string for 0 so the placeholder shows; prevents "0150"
@@ -978,6 +1040,7 @@ function NumField({
           </span>
         )}
       </div>
+      {hint && <p className="text-xs text-muted-foreground/80">{hint}</p>}
     </div>
   );
 }
@@ -990,6 +1053,7 @@ function PctField({
   step = 1,
   max,
   tooltip,
+  hint,
 }: {
   label: string;
   labelZh?: string;
@@ -998,6 +1062,7 @@ function PctField({
   step?: number;
   max?: number;
   tooltip?: string;
+  hint?: string;
 }) {
   return (
     <NumField
@@ -1008,6 +1073,7 @@ function PctField({
       step={step}
       max={max}
       suffix="%"
+      hint={hint}
       tooltip={tooltip}
     />
   );
