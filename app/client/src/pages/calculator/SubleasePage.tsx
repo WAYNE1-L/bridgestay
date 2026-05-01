@@ -746,6 +746,10 @@ function PropertyCard({
             type="button"
             className="flex-1 flex items-center gap-3 text-left"
             onClick={() => setExpanded((e) => !e)}
+            aria-expanded={expanded}
+            aria-label={`${expanded ? "Collapse" : "Expand"} ${
+              property.nickname || "untitled property"
+            }`}
           >
             <ChevronDown
               className={`h-4 w-4 text-muted-foreground transition-transform ${
@@ -1138,6 +1142,9 @@ function NumField({
   // Display empty string for 0 so the placeholder shows; prevents "0150"
   // prefix-residue when typing into a value="0" field.
   const displayValue = !Number.isFinite(value) || value === 0 ? "" : value;
+  // Compose an explicit accessible name from the bilingual label so screen
+  // readers announce both halves regardless of label-proximity heuristics.
+  const ariaName = labelZh ? `${label} / ${labelZh}` : label;
   return (
     <div className="space-y-1.5">
       <FieldHeader label={label} labelZh={labelZh} tooltip={tooltip} />
@@ -1151,6 +1158,7 @@ function NumField({
           value={displayValue}
           placeholder={placeholder}
           disabled={disabled}
+          aria-label={ariaName}
           onChange={(e) => {
             const raw = e.target.value;
             if (raw === "") {
@@ -1223,6 +1231,7 @@ function TextField({
   onChange: (s: string) => void;
   placeholder?: string;
 }) {
+  const ariaName = labelZh ? `${label} / ${labelZh}` : label;
   return (
     <div className="space-y-1.5">
       <FieldHeader label={label} labelZh={labelZh} />
@@ -1230,6 +1239,7 @@ function TextField({
         type="text"
         value={value}
         placeholder={placeholder}
+        aria-label={ariaName}
         onChange={(e) => onChange(e.target.value)}
       />
     </div>
@@ -1249,11 +1259,12 @@ function ToggleField({
   onChange: (b: boolean) => void;
   tooltip?: string;
 }) {
+  const ariaName = labelZh ? `${label} / ${labelZh}` : label;
   return (
     <div className="space-y-1.5">
       <FieldHeader label={label} labelZh={labelZh} tooltip={tooltip} />
       <div className="flex items-center h-9">
-        <Switch checked={checked} onCheckedChange={onChange} />
+        <Switch checked={checked} onCheckedChange={onChange} aria-label={ariaName} />
       </div>
     </div>
   );
