@@ -422,6 +422,14 @@ function PortfolioSummary({
           dim={isEmpty}
         />
       </div>
+      {/* Opportunity-cost framing — only when subletting actually pays. */}
+      {outputs.totalMonthlyNet > 0 && (
+        <p className="text-xs text-muted-foreground italic">
+          Skipping this opportunity costs ~{fmtMoney(outputs.totalMonthlyNet)}/mo in
+          forgone income. /
+          不做这单 ≈ 每月放弃 {fmtMoney(outputs.totalMonthlyNet)} 的收入。
+        </p>
+      )}
     </section>
   );
 }
