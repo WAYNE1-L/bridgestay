@@ -683,7 +683,7 @@ function PropertyCard({
     onChange({ ...property, [key]: v });
 
   return (
-    <Card>
+    <Card className="transition-shadow duration-200 hover:shadow-md">
       <CardContent className="p-5">
         <header className="flex items-center justify-between gap-3">
           <button
