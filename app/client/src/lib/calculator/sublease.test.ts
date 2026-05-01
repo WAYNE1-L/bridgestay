@@ -279,3 +279,152 @@ describe("calculatePortfolio", () => {
     expect(portfolio.portfolioPaybackMonths).toBe(Infinity);
   });
 });
+
+// ─── Pass B additions: extreme-value sanity tests ────────────────────────────
+
+describe("calculateProperty — extreme value scenarios (Pass B)", () => {
+  it("very high lease rent ($50k/mo) does not produce NaN / Infinity in cashflow", () => {
+    const luxury: PropertyInputs = {
+      id: "lux",
+      nickname: "Luxury",
+      ...EMPTY_PROPERTY,
+      monthlyRentToOwner: 50_000,
+      peakAdr: 1500,
+      offSeasonAdr: 1000,
+      occupancyRate: 80,
+      avgNightsPerBooking: 3,
+      furnitureCost: 25_000,
+    };
+    const result = calculateProperty(luxury, 12);
+    expect(Number.isFinite(result.monthlyRevenue)).toBe(true);
+    expect(Number.isFinite(result.monthlyOperatingCost)).toBe(true);
+    result.monthlyCashflows.forEach((cashflow) => {
+      expect(Number.isFinite(cashflow)).toBe(true);
+    });
+    result.cumulativeCashflows.forEach((cumulative) => {
+      expect(Number.isFinite(cumulative)).toBe(true);
+    });
+  });
+
+  it("12-month full-year horizon completes without errors", () => {
+    const result = calculateProperty(slcInput, 12);
+    expect(result.monthlyCashflows).toHaveLength(12);
+    expect(result.cumulativeCashflows).toHaveLength(12);
+    // Cumulative should be monotonically increasing for the SLC preset
+    // (no setup cost, positive monthly net)
+    for (let i = 1; i < result.cumulativeCashflows.length; i++) {
+      expect(result.cumulativeCashflows[i]).toBeGreaterThanOrEqual(
+        result.cumulativeCashflows[i - 1]
+      );
+    }
+  });
+
+  it("peak ADR < off-season ADR is unusual but not an error", () => {
+    // Inverse-seasonal: e.g. a beach property where peak season is "off"
+    // for some macro reason. The math should still run.
+    const inverted: PropertyInputs = {
+      id: "inv",
+      nickname: "Inverted",
+      ...EMPTY_PROPERTY,
+      peakAdr: 50,
+      offSeasonAdr: 90,
+      peakSeasonStartMonth: 5,
+      peakSeasonEndMonth: 9,
+      occupancyRate: 60,
+    };
+    const result = calculateProperty(inverted);
+    // blended = (50*5 + 90*7)/12 ≈ 73.33
+    // monthly rev = 73.33 * 30 * 0.6 ≈ 1320
+    expect(result.monthlyRevenue).toBeGreaterThan(1200);
+    expect(result.monthlyRevenue).toBeLessThan(1500);
+  });
+
+  it("100% occupancy is a valid upper bound", () => {
+    const fullOcc: PropertyInputs = {
+      id: "100",
+      nickname: "Always full",
+      ...EMPTY_PROPERTY,
+      peakAdr: 100,
+      offSeasonAdr: 100,
+      occupancyRate: 100,
+      avgNightsPerBooking: 2,
+    };
+    const result = calculateProperty(fullOcc);
+    // Constant ADR 100, occ 100 → revenue 100 * 30 * 1.0 = 3000
+    expect(result.monthlyRevenue).toBeCloseTo(3000, 0);
+    // 30 / 2 = 15 turnovers per month (no cleaning passed, so reflects)
+    expect(Number.isFinite(result.monthlyOperatingCost)).toBe(true);
+  });
+
+  it("zero avg nights / booking guards against divide-by-zero", () => {
+    const broken: PropertyInputs = {
+      id: "z",
+      nickname: "Z",
+      ...EMPTY_PROPERTY,
+      avgNightsPerBooking: 0,
+      cleaningPassedToGuest: false,
+      cleaningPerTurnover: 50,
+      peakAdr: 100,
+      offSeasonAdr: 100,
+      occupancyRate: 70,
+    };
+    const result = calculateProperty(broken);
+    // turnoversPerMonth guarded → 0 → cleaning cost 0
+    expect(result.monthlyOperatingCost).toBe(0);
+    expect(Number.isFinite(result.monthlyNetProfit)).toBe(true);
+  });
+
+  it("peak season exactly the full year (Jan-Dec) collapses to peak ADR only", () => {
+    const yearRound: PropertyInputs = {
+      id: "yr",
+      nickname: "Year-round",
+      ...EMPTY_PROPERTY,
+      peakAdr: 120,
+      offSeasonAdr: 60,
+      peakSeasonStartMonth: 1,
+      peakSeasonEndMonth: 12,
+      occupancyRate: 80,
+    };
+    const result = calculateProperty(yearRound);
+    // peakLen = 12, offLen = 0 → blended = peakAdr = 120
+    // revenue = 120 * 30 * 0.8 = 2880
+    expect(result.monthlyRevenue).toBeCloseTo(2880, 0);
+  });
+});
+
+describe("calculatePortfolio — extreme value scenarios (Pass B)", () => {
+  it("seven-property portfolio (above SERIES_COLORS palette length) computes without error", () => {
+    const properties: PropertyInputs[] = Array.from({ length: 7 }, (_, idx) => ({
+      id: `seven-${idx}`,
+      ...SLC_SUMMER_PRESET,
+      nickname: `P${idx + 1}`,
+    }));
+    const portfolio = calculatePortfolio({ properties, analysisHorizonMonths: 3 });
+    expect(portfolio.perProperty).toHaveLength(7);
+    expect(Number.isFinite(portfolio.totalMonthlyNet)).toBe(true);
+  });
+
+  it("portfolio with mixed winners and losers nets correctly", () => {
+    const winner: PropertyInputs = {
+      id: "w",
+      ...SLC_SUMMER_PRESET,
+      nickname: "Winner",
+    };
+    const loser: PropertyInputs = {
+      id: "l",
+      nickname: "Loser",
+      ...EMPTY_PROPERTY,
+      monthlyRentToOwner: 5000,
+      peakAdr: 30,
+      offSeasonAdr: 30,
+      occupancyRate: 30,
+    };
+    const portfolio = calculatePortfolio({
+      properties: [winner, loser],
+      analysisHorizonMonths: 3,
+    });
+    const w = calculateProperty(winner, 3);
+    const l = calculateProperty(loser, 3);
+    expect(portfolio.totalMonthlyNet).toBeCloseTo(w.monthlyNetProfit + l.monthlyNetProfit, 4);
+  });
+});
