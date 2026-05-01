@@ -1,0 +1,38 @@
+{
+  "name": "lehi-scraper",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Daily Realtor.com listings monitor for Lehi (84043) / Traverse Mountain area, with distance-to-Morning-Vista calculation.",
+  "scripts": {
+    "scrape": "tsx src/scrape.ts",
+    "scrape:mock": "tsx src/scrape.ts --use-mock",
+    "viewer": "tsx src/server.ts",
+    "dev": "vite",
+    "build": "vite build && tsc --noEmit -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "better-sqlite3": "^11.3.0",
+    "express": "^4.21.0",
+    "playwright": "^1.48.0"
+  },
+  "devDependencies": {
+    "@tailwindcss/vite": "^4.1.0",
+    "@types/better-sqlite3": "^7.6.11",
+    "@types/express": "^4.17.21",
+    "@types/node": "^22.7.0",
+    "@types/react": "^18.3.0",
+    "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^4.3.0",
+    "react": "^18.3.0",
+    "react-dom": "^18.3.0",
+    "recharts": "^2.13.0",
+    "tailwindcss": "^4.1.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0",
+    "vite": "^5.4.0",
+    "vitest": "^2.1.0"
+  }
+}

@@ -124,3 +124,14 @@ archive/
 *.sqlite
 *.sqlite3
 *.db
+
+
+# ----------------------------------------------------------
+# Lehi Scraper — local data, build output, debug captures
+# ----------------------------------------------------------
+tools/lehi-scraper/data/*.db
+tools/lehi-scraper/data/*.db-shm
+tools/lehi-scraper/data/*.db-wal
+tools/lehi-scraper/data/debug/
+tools/lehi-scraper/public/
+tools/lehi-scraper/node_modules/
