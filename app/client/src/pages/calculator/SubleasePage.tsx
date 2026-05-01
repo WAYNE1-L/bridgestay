@@ -182,7 +182,7 @@ export default function SubleasePage() {
   return (
     <>
       <Navbar />
-      <main className="container pt-32 pb-16 space-y-6">
+      <main className="container pt-32 pb-16 space-y-6 font-sans tabular-nums">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
