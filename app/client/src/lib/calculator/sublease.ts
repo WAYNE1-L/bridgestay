@@ -1,90 +1,177 @@
-// Airbnb sublet arbitrage business model.
-//
-// You sign a 1–12 month lease with the property owner (paying them monthly
-// rent), put the unit on Airbnb, and pocket the spread. This module computes
-// the math for one property and a portfolio of them.
-//
-// Revenue model: blended ADR. We compute a single yearly-blended ADR from
-// peak-season and off-season rates, then assume that average for every month
-// in the analysis horizon. Error vs. an exact-by-calendar-month model is
-// roughly ±10% — acceptable for a v1 decision tool.
+/**
+ * Airbnb sublet arbitrage business model.
+ *
+ * You sign a 1–12 month lease with the property owner (paying them monthly
+ * rent), put the unit on Airbnb, and pocket the spread. This module computes
+ * the math for one property and a portfolio of them.
+ *
+ * Revenue model: blended ADR. We compute a single yearly-blended ADR from
+ * peak-season and off-season rates, then assume that average for every month
+ * in the analysis horizon. Error vs. an exact-by-calendar-month model is
+ * roughly ±10% — acceptable for a v1 decision tool.
+ *
+ * Conventions:
+ * - All monetary values are USD.
+ * - Percentages are stored as 0–100 unless otherwise noted (e.g.
+ *   `airbnbHostFeeRate` is decimal 0–1).
+ * - "Monthly" totals use a 30-day month for revenue calculations.
+ */
 
 export interface PropertyInputs {
+  /** Stable client-side id (typically `crypto.randomUUID()`). */
   id: string;
+  /** User-facing label, e.g. "SLC summer A". May be empty. */
   nickname: string;
 
-  // Lease cost
+  // ─── Lease cost ───────────────────────────────────────────────────────
+  /** Monthly rent paid to property owner, USD. */
   monthlyRentToOwner: number;
+  /** Refundable security deposit paid to owner up-front, USD. */
   initialDeposit: number;
+  /** Lease length in months (1–24). Drives default analysis horizon. */
   leaseLengthMonths: number;
+  /** Whether the deposit is expected back at lease end. Captured for
+   *  future use; v1 math treats it as opportunity cost only. */
   depositRefundable: boolean;
 
-  // Setup cost (one-time)
+  // ─── Setup cost (one-time, charged in month 1 of cashflow) ────────────
+  /** Furniture and durable goods, USD. */
   furnitureCost: number;
+  /** Light renovation / paint / repairs, USD. */
   renovationCost: number;
+  /** First professional deep clean before listing, USD. */
   initialDeepClean: number;
+  /** Listing photography, USD. */
   photographyCost: number;
 
-  // Airbnb revenue model
+  // ─── Airbnb revenue model ─────────────────────────────────────────────
+  /** Average daily rate during peak season, USD/night. */
   peakAdr: number;
+  /** Average daily rate during off-season, USD/night. */
   offSeasonAdr: number;
-  peakSeasonStartMonth: number; // 1-12
-  peakSeasonEndMonth: number; // 1-12
-  occupancyRate: number; // 0-100 (%)
+  /** First month of peak season (1–12, where 1 = January). */
+  peakSeasonStartMonth: number;
+  /** Last month of peak season (1–12). May wrap year-end (start > end). */
+  peakSeasonEndMonth: number;
+  /** % of available nights booked, 0–100. */
+  occupancyRate: number;
+  /** Average stay length in nights — drives turnover frequency. */
   avgNightsPerBooking: number;
 
-  // Operating cost / month
+  // ─── Operating cost / month ───────────────────────────────────────────
+  /** Utilities (water/power/internet) USD/month. Ignored when
+   *  `utilitiesIncludedInLease` is true. */
   utilities: number;
+  /** True if owner-provided lease covers utilities (zeros them out). */
   utilitiesIncludedInLease: boolean;
+  /** Per-turnover cleaning cost, USD. Ignored when
+   *  `cleaningPassedToGuest` is true. */
   cleaningPerTurnover: number;
+  /** True if the cleaning fee is charged to the guest (zeros it out). */
   cleaningPassedToGuest: boolean;
+  /** Recurring supplies (toiletries, coffee, etc.) USD/month. */
   supplies: number;
+  /** Reserve for occasional repairs, USD/month. */
   maintenanceReserve: number;
+  /** Short-term-rental insurance premium, USD/month. */
   strInsurance: number;
 
-  // Risk
-  damageDepositHoldRate: number; // 0-50 (%)
+  // ─── Risk ─────────────────────────────────────────────────────────────
+  /** Approximate % of revenue lost to damage / deposit holds, 0–50. */
+  damageDepositHoldRate: number;
 
-  // Platform & tax
-  airbnbHostFeeRate: number; // 0-1 (decimal). Defaults to 0.03.
+  // ─── Platform & tax ───────────────────────────────────────────────────
+  /** Airbnb host fee as a decimal (0.03 = 3%). Locked at 3% by default. */
+  airbnbHostFeeRate: number;
+  /** True if Airbnb auto-collects lodging tax on the host's behalf. */
   lodgingTaxHandledByAirbnb: boolean;
-  manualLodgingTaxRate: number; // 0-100 (%), only when above is false
-  incomeTaxRate: number; // 0-100 (%)
+  /** Manually-entered lodging tax % (0–100), only used when
+   *  `lodgingTaxHandledByAirbnb` is false. */
+  manualLodgingTaxRate: number;
+  /** Income tax rate on positive monthly profit (0–100, %). */
+  incomeTaxRate: number;
 }
 
 export interface PropertyOutputs {
+  /** Sum of furniture + renovation + deep clean + photography, USD. */
   totalSetupCost: number;
+  /** Average gross revenue per month using blended ADR, USD. */
   monthlyRevenue: number;
+  /** Sum of all recurring monthly costs (utilities, cleaning, supplies,
+   *  maintenance, STR insurance), USD. Excludes lease rent and taxes. */
   monthlyOperatingCost: number;
+  /** Income tax charged on positive monthly pretax profit, USD. */
   monthlyTaxCost: number;
+  /** Final after-tax monthly profit, USD. */
   monthlyNetProfit: number;
+  /** Months until cumulative cashflow breaks even.
+   *  - `0` when there is no setup cost ("immediate")
+   *  - `Infinity` when monthly net ≤ 0 (never recovers) */
   paybackMonths: number;
+  /** Annualised return on setup cost, as a percentage (0–∞). */
   annualROI: number;
+  /** Same as `annualROI`; kept as a separate field for clarity at call sites. */
   cashOnCashReturn: number;
+  /** Total net over the analysis horizon, USD (monthly net × N − setup). */
   totalPeriodNet: number;
+  /** Per-month cashflow array, length = horizon. Setup hits index 0. */
   monthlyCashflows: number[];
+  /** Running cumulative cashflow, parallel to `monthlyCashflows`. */
   cumulativeCashflows: number[];
+  /** First 1-indexed month where cumulative ≥ 0; `null` if never. */
   breakEvenMonth: number | null;
 }
 
 export interface PortfolioInputs {
+  /** All properties under consideration. */
   properties: PropertyInputs[];
+  /** Number of months to project. Cashflow series are this long. */
   analysisHorizonMonths: number;
 }
 
 export interface PortfolioOutputs {
+  /** Sum of every property's monthlyNetProfit. */
   totalMonthlyNet: number;
+  /** Sum of every property's totalSetupCost. */
   totalSetupCost: number;
+  /** Aggregate payback months using portfolio totals.
+   *  - `0` when totalSetupCost === 0
+   *  - `Infinity` when totalMonthlyNet ≤ 0 */
   portfolioPaybackMonths: number;
+  /** Sum of every property's totalPeriodNet over the shared horizon. */
   totalPeriodNet: number;
+  /** Per-property outputs, in the same order as `inputs.properties`. */
   perProperty: PropertyOutputs[];
 }
 
+/**
+ * Length in months of a peak-season window. Handles year-wrap (e.g.
+ * `Nov(11) → Feb(2)` = 4 months: Nov, Dec, Jan, Feb).
+ */
 function peakSeasonLength(startMonth: number, endMonth: number): number {
   if (startMonth <= endMonth) return endMonth - startMonth + 1;
   return 12 - startMonth + 1 + endMonth;
 }
 
+/**
+ * Compute Airbnb-sublet economics for a single property.
+ *
+ * Revenue uses a 12-month blended ADR (peak × peakLen + off × offLen) / 12,
+ * times 30 nights, times occupancy. Damage / deposit hold is applied as a
+ * linear deduction on revenue.
+ *
+ * Costs subtracted in order: lease rent → operating costs → Airbnb host fee
+ * → optional manual lodging tax → income tax (only on positive profit).
+ *
+ * Cashflow series: setup cost is realised in month 1; subsequent months are
+ * the steady-state monthly net.
+ *
+ * @param inputs Property configuration.
+ * @param horizonMonths Optional horizon. Defaults to `leaseLengthMonths`
+ *   when called from a single-property context; the portfolio caller passes
+ *   `analysisHorizonMonths` so all properties share a horizon.
+ * @returns Headline numbers, breakeven, and per-month cashflow arrays.
+ */
 export function calculateProperty(
   inputs: PropertyInputs,
   horizonMonths: number = inputs.leaseLengthMonths
@@ -188,6 +275,16 @@ export function calculateProperty(
   };
 }
 
+/**
+ * Aggregate `calculateProperty` across an entire portfolio under a shared
+ * analysis horizon.
+ *
+ * Math is straightforward summation; each property is independent. The
+ * portfolio payback uses portfolio totals (not the max of per-property
+ * paybacks) because cashflows pool.
+ *
+ * @returns Totals plus the per-property breakdowns in input order.
+ */
 export function calculatePortfolio(inputs: PortfolioInputs): PortfolioOutputs {
   const perProperty = inputs.properties.map((p) =>
     calculateProperty(p, inputs.analysisHorizonMonths)
