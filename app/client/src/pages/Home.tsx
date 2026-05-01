@@ -321,6 +321,50 @@ export default function Home() {
         </div>
       </section>
 
+      {/* Sublet Pivot Strip — primary CTA toward /sublets, R2 narrative */}
+      <section className="bg-gradient-to-r from-orange-50 via-amber-50 to-orange-50 border-y border-orange-100">
+        <div className="container py-10">
+          <motion.div
+            initial={{ opacity: 0, y: 16 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.5 }}
+            className="flex flex-col md:flex-row md:items-center md:justify-between gap-5"
+          >
+            <div className="flex items-start gap-4 max-w-2xl">
+              <div className="w-12 h-12 rounded-2xl bg-orange-500/10 ring-1 ring-orange-200 flex items-center justify-center shrink-0">
+                <GraduationCap className="w-6 h-6 text-orange-600" />
+              </div>
+              <div>
+                <p className="text-xs font-semibold uppercase tracking-wider text-orange-700">
+                  {language === "cn" ? "新功能 · NEW" : "NEW · 新功能"}
+                </p>
+                <h2 className={`text-xl md:text-2xl font-bold text-neutral-900 mt-1 leading-tight ${language === "cn" ? "font-chinese" : ""}`}
+                  style={language === "cn" ? { fontFamily: "var(--font-chinese)" } : {}}>
+                  {language === "cn"
+                    ? "学生转租 · 直接租给学生,跳过经纪与 SSN"
+                    : "Student sublets — rent directly from students, skip the broker and the SSN"}
+                </h2>
+                <p className={`mt-2 text-sm text-neutral-600 leading-relaxed ${language === "cn" ? "font-chinese" : ""}`}
+                  style={language === "cn" ? { fontFamily: "var(--font-chinese)" } : {}}>
+                  {language === "cn"
+                    ? "U District、糖屋、市中心、山脚、联邦高地。按区域、价格、入住日期筛选。"
+                    : "U District, Sugar House, Downtown, Foothill, Federal Heights. Filter by area, price, and move-in date."}
+                </p>
+              </div>
+            </div>
+            <Button
+              onClick={() => setLocation("/sublets")}
+              size="lg"
+              className="rounded-full px-6 h-12 bg-orange-500 hover:bg-orange-600 text-white shadow-soft self-start md:self-center shrink-0"
+            >
+              {language === "cn" ? "浏览转租" : "Browse sublets"}
+              <ArrowRight className="w-4 h-4 ml-2" />
+            </Button>
+          </motion.div>
+        </div>
+      </section>
+
       {/* University Trust Signals Section */}
       <section className="py-16 bg-white border-y border-gray-100">
         <div className="container">
