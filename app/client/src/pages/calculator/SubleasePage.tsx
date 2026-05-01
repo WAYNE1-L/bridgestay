@@ -742,7 +742,8 @@ function PropertyCard({
                 onChange={(v) => set("monthlyRentToOwner", v)}
                 step={50}
                 suffix="$/mo"
-                tooltip="What you pay the property owner each month / 你每月付给业主的租金"
+                placeholder="800"
+                tooltip="What you pay the property owner each month. SLC summer studio typical: $700–1,000 / 你每月付给业主的租金,SLC 夏季单间典型 $700–1,000"
               />
               <NumField
                 label="Lease length"
@@ -752,6 +753,8 @@ function PropertyCard({
                 min={1}
                 max={24}
                 suffix="mo"
+                placeholder="3"
+                tooltip="Typical SLC summer sublet: 3 months. Longer term reduces per-month risk but increases total exposure. / 典型 SLC 暑假转租 3 个月。期限越长每月风险越低但总敞口越大"
               />
 
               <NumField
@@ -761,7 +764,8 @@ function PropertyCard({
                 onChange={(v) => set("peakAdr", v)}
                 step={5}
                 suffix="$/night"
-                tooltip="Average daily rate during peak season (e.g. May–Sep summer in SLC) / 旺季平均每晚价"
+                placeholder="90"
+                tooltip="Average daily rate during peak season. SLC summer (May–Sep): $80–120 / 旺季每晚均价。SLC 夏季典型 $80–120"
               />
               <NumField
                 label="Off-season ADR"
@@ -774,6 +778,7 @@ function PropertyCard({
                 }}
                 step={5}
                 suffix="$/night"
+                placeholder="50"
                 hint={offAdrHint}
               />
 
@@ -784,7 +789,8 @@ function PropertyCard({
                 onChange={(v) => set("occupancyRate", v)}
                 step={1}
                 max={100}
-                tooltip="Estimated % of nights booked. SLC summer realistic: 60–75% / 估算每月入住率"
+                placeholder="70"
+                tooltip="Estimated % of nights booked. Realistic SLC summer: 60–75%. Conservative new listing: 50–60% / 估算每月入住率。SLC 夏季现实 60–75%,新房源保守估 50–60%"
               />
               <div /> {/* spacer */}
             </section>
@@ -1044,6 +1050,7 @@ function NumField({
   suffix,
   tooltip,
   hint,
+  placeholder = "0",
   disabled,
 }: {
   label: string;
@@ -1056,6 +1063,7 @@ function NumField({
   suffix?: string;
   tooltip?: string;
   hint?: string;
+  placeholder?: string;
   disabled?: boolean;
 }) {
   // Display empty string for 0 so the placeholder shows; prevents "0150"
@@ -1072,7 +1080,7 @@ function NumField({
           min={min}
           max={max}
           value={displayValue}
-          placeholder="0"
+          placeholder={placeholder}
           disabled={disabled}
           onChange={(e) => {
             const raw = e.target.value;
@@ -1105,6 +1113,7 @@ function PctField({
   max,
   tooltip,
   hint,
+  placeholder,
 }: {
   label: string;
   labelZh?: string;
@@ -1114,6 +1123,7 @@ function PctField({
   max?: number;
   tooltip?: string;
   hint?: string;
+  placeholder?: string;
 }) {
   return (
     <NumField
@@ -1126,6 +1136,7 @@ function PctField({
       suffix="%"
       hint={hint}
       tooltip={tooltip}
+      placeholder={placeholder}
     />
   );
 }
