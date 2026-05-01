@@ -866,7 +866,7 @@ function PropertyCard({
                       onChange={(v) => set("avgNightsPerBooking", v)}
                       step={0.5}
                       min={1}
-                      suffix="night"
+                      suffix="nights"
                     />
                   </div>
                 </Section>
