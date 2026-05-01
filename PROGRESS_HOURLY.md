@@ -57,3 +57,86 @@ Numbered 11 (tRPC over Express): I'll verify by reading the existing server in P
 #### Verdict
 
 **No assumption was severe enough to require `WAITING_FOR_USER.md`.** Decision A (one-sided UI in R2) is a defensible scope cut documented in the report. Proceeding to Phase 1 audit.
+
+---
+
+## Hour 2 — Phase 1 audit & gap analysis
+
+### Repository audit (key finds)
+
+The repo is **far more developed** than the prompt's "audit BridgeStay current state" implies. Concrete inventory:
+
+**Schema** (`app/drizzle/schema.ts`):
+- `apartments` table already has **sublease-specific fields**: `isSublease`, `subleaseEndDate`, `wechatContact` (added in a previous "Phase 3" of the original buildout)
+- Full ecosystem: `users`, `studentProfiles`, `landlordProfiles`, `applications`, `documents`, `payments`, `messages`, `universities`, `notifications`, `promotions`, `listingReports`, `savedApartments`
+- Enums for `propertyType`, `apartmentStatus`, `outreachStatus` etc. all exist
+- **Implication**: I am not building a sublet platform from scratch. I'm pivoting the *narrative + UX surface* of an apartment-rental platform whose schema already supports sublets. This is a 3-5× smaller scope than the prompt assumed.
+
+**Backend** (`app/server/`):
+- tRPC router with `apartments.list`, `apartments.getById`, `apartments.report`, admin variants
+- `apartmentFiltersSchema` accepts `city`, `state`, `minPrice`, `maxPrice`, `bedrooms`, `bathrooms`, `propertyType`, `petsAllowed`, `parkingIncluded`, `nearUniversity`. **Critically: no `isSublease` filter** despite the field existing in the DB.
+- `getApartments()` in `db.ts` likewise builds WHERE conditions but never references `isSublease`. **One-line addition needed**.
+- Stripe / OAuth / S3 upload / WeChat-import / AI features all wired up — frozen per prompt.
+
+**Frontend** (`app/client/src/`):
+- `App.tsx` mounts `/apartments`, `/apartments/:id`, plus calculator, analytics, admin routes. **No `/sublets` route** exists.
+- `pages/Apartments.tsx` is 914 lines — full grid + filter sidebar + map view + saved apartments + admin mode. Shows ALL apartments (including for-sale), no sublet-specific UX.
+- `pages/Home.tsx` is 721 lines, hero copy is generic "international student rental". Existing `siteContent.hero.headline` says "Crossing borders made easy", not sublet-specific.
+- `lib/translations.ts` is a clean, structured bilingual content file — extend by adding new keys.
+- Navbar already has `Analytics` and `Calculator` entries (added in main-merge).
+
+**Tools**:
+- `tools/lehi-scraper/` exists from R1, frozen per prompt.
+
+**State files**:
+- `HARNESS_STATE.md` exists (R1 entry only).
+- `PROJECT_MEMORY_v3.md` and `harness-protocol.md` referenced in the prompt **do not exist** in the repo. Treating the prompt as the source of truth and noting this gap.
+
+### Audit-driven strategy revision
+
+Original plan was "build /sublets parallel system". Audit-revised plan:
+
+**Surgical additions**, not parallel system:
+1. **Extend `apartmentFiltersSchema` and `getApartments`** to support `isSublease` boolean + a `subleaseAvailableThrough` window
+2. **Build `/sublets` as a sublet-tuned browse page** that calls `trpc.apartments.list({ isSublease: true })` — different filters, different default sort, different hero copy
+3. **Add HomePage sublet hero section + CTA** linking to `/sublets`
+4. Mock data: since the dev DB likely has zero sublet listings, frontend layer falls back to red-bannered hand-curated mock listings tied to actual UofU-area cross-streets
+
+This approach:
+- Reuses 100% of existing backend infrastructure
+- Doesn't duplicate the existing 914-line Apartments page
+- Hits the prompt's "extend, don't break" rule perfectly
+- Cuts task estimates roughly in half
+
+### Gap Analysis vs benchmarks
+
+| Benchmark | Has | What we lack at top of mind |
+|---|---|---|
+| **Furnished Finder** | photo gallery, availability calendar, host profile, monthly-stay focus, university anchor | photo gallery; availability date range filter; sublet-end-date in cards; "save for nurse/student" segmenting |
+| **Airbnb** | card UI, instant book, wishlist, reviews, host avatar | wishlist UI exists in Apartments via "save", but no "review" or "host avatar" pattern |
+| **Apartments.com** | map view (we have it!), saved searches, advanced filters, mortgage tools | saved searches, deep filter persistence, neighborhood guide |
+| **Craigslist sublets** | freshness, geo coverage | (we are massively better in UI; we lack only data freshness) |
+| **小红书 / WeChat** | personal narrative + photos, native Chinese UX | we have bilingual labels but no "host story" surface |
+
+### Top 10 candidate features (ranked by user impact × build cost)
+
+1. **`/sublets` browse page** — P0, ~2.5h, **picked**
+2. **HomePage sublet narrative pivot** — P0, ~1h, **picked**
+3. **Sublet-specific filters (area pills, furnished, lease-end window) wired through tRPC** — P0, ~1.5h, **picked**
+4. Listing detail tweaks for sublet (show end date prominently) — P1, ~1h, defer to R3
+5. Photo gallery (real photos in cards) — P1, ~2h, defer
+6. Manual entry form for "I want to post my sublet" — P0, ~3h, defer (Phase 0.5 scope cut)
+7. Real Craigslist scraper into Postgres — P1, ~4h, defer to R3
+8. Map view on `/sublets` — P1, ~2h, defer (existing Apartments page has map; sublets gets it in R3)
+9. Wishlist for sublets — P2, ~1h, defer
+10. Notifications / digest — P3, ~4h, defer
+
+### R2 Top 3 decision
+
+**Executing**: 1, 2, 3 — all P0, totals ~5h leaving margin. Combined effect = **HomePage talks about sublets, `/sublets` shows them, filters narrow them**. Closed loop a user can browse end-to-end.
+
+**Deferred to R3** (each gets a line in NEXT_PROMPT.md): 4, 5, 6, 7, 8.
+
+**Skipped this round**: 9, 10 — too speculative without listing detail done first.
+
+### Phase 1 done. Proceeding to Phase 2.
