@@ -213,6 +213,19 @@ export default function SubleasePage() {
     });
   };
 
+  // Reset a single card's data back to EMPTY_PROPERTY but keep its slot
+  // (and a fresh id so React's keyed-list reconciliation picks up that the
+  // children genuinely changed — keeps the auto-suggest ref state from
+  // leaking across).
+  const resetProperty = (id: string) => {
+    setPortfolio((prev) => ({
+      ...prev,
+      properties: prev.properties.map((property) =>
+        property.id === id ? makeEmptyProperty() : property
+      ),
+    }));
+  };
+
   const handleTryExample = () => {
     setPortfolio((prev) => {
       const next = [...prev.properties];
@@ -267,6 +280,7 @@ export default function SubleasePage() {
               canRemove={portfolio.properties.length > 1}
               onChange={(updated) => updateProperty(property.id, updated)}
               onRemove={() => removeProperty(property.id)}
+              onReset={() => resetProperty(property.id)}
             />
           ))}
         </div>
@@ -667,12 +681,14 @@ function PropertyCard({
   canRemove,
   onChange,
   onRemove,
+  onReset,
 }: {
   property: PropertyInputs;
   outputs: PropertyOutputs;
   canRemove: boolean;
   onChange: (p: PropertyInputs) => void;
   onRemove: () => void;
+  onReset: () => void;
 }) {
   const [expanded, setExpanded] = useState(true);
   const [advancedOpen, setAdvancedOpen] = useState(false);
@@ -742,16 +758,29 @@ function PropertyCard({
               </p>
             </div>
           </button>
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon"
-            disabled={!canRemove}
-            onClick={onRemove}
-            aria-label="Remove property"
-          >
-            {canRemove ? <Trash2 className="h-4 w-4" /> : <X className="h-4 w-4 opacity-30" />}
-          </Button>
+          <div className="flex items-center gap-1 shrink-0">
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              onClick={onReset}
+              aria-label="Reset this property"
+              title="Reset this card / 重置此卡"
+            >
+              <RotateCcw className="h-4 w-4" />
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              size="icon"
+              disabled={!canRemove}
+              onClick={onRemove}
+              aria-label="Remove property"
+              title={canRemove ? "Remove property / 删除房源" : undefined}
+            >
+              {canRemove ? <Trash2 className="h-4 w-4" /> : <X className="h-4 w-4 opacity-30" />}
+            </Button>
+          </div>
         </header>
 
         {expanded && (
