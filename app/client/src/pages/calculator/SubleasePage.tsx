@@ -82,7 +82,7 @@ function NumField({
             const v = parseFloat(e.target.value);
             onChange(Number.isFinite(v) ? v : 0);
           }}
-          className={suffix ? "pr-12" : ""}
+          className={suffix ? "pr-12 no-spinner" : "no-spinner"}
         />
         {suffix && (
           <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">
