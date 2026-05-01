@@ -1,35 +1,85 @@
-import { useState, useMemo, useEffect } from "react";
-import { Bed, ChevronDown, RotateCcw, TrendingUp, AlertTriangle, CheckCircle2, Sparkles } from "lucide-react";
+import { useState, useEffect, useMemo } from "react";
 import {
-  LineChart,
+  Bed,
+  ChevronDown,
+  Info,
+  Plus,
+  RotateCcw,
+  Sparkles,
+  Trash2,
+  X,
+} from "lucide-react";
+import {
+  Bar,
+  BarChart,
+  CartesianGrid,
+  Cell,
+  ComposedChart,
+  Legend,
   Line,
+  LineChart,
+  ReferenceLine,
+  ResponsiveContainer,
+  Tooltip as RechartsTooltip,
   XAxis,
   YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-  ReferenceLine,
 } from "recharts";
 
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Slider } from "@/components/ui/slider";
-import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Switch } from "@/components/ui/switch";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Navbar } from "@/components/Navbar";
-import { useLanguage } from "@/contexts/LanguageContext";
 
 import {
-  DEFAULT_SUBLEASE_INPUT,
-  SubleaseInputSchema,
-  calculateSublease,
-  type SubleaseInput,
+  EMPTY_PROPERTY,
+  SLC_SUMMER_PRESET,
+  calculatePortfolio,
+  calculateProperty,
+  type PortfolioInputs,
+  type PropertyInputs,
+  type PropertyOutputs,
 } from "@/lib/calculator/sublease";
 
-const STORAGE_KEY = "bridgestay:sublease-calc:v1";
+const STORAGE_KEY = "sublease-portfolio-v2";
 
-function safeUSD(n: number): string {
+const MONTH_NAMES_EN = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+
+const SERIES_COLORS = [
+  "#3B82F6",
+  "#10B981",
+  "#F59E0B",
+  "#EF4444",
+  "#8B5CF6",
+  "#14B8A6",
+  "#EC4899",
+];
+
+// ─── Formatters ──────────────────────────────────────────────────────────────
+
+function fmtMoney(n: number): string {
   if (!Number.isFinite(n)) return "—";
   return new Intl.NumberFormat("en-US", {
     style: "currency",
@@ -38,53 +88,879 @@ function safeUSD(n: number): string {
   }).format(n);
 }
 
-function safePct(n: number, digits = 1): string {
-  if (!Number.isFinite(n)) return "—";
-  return `${(n * 100).toFixed(digits)}%`;
+function fmtPayback(n: number): string {
+  if (!Number.isFinite(n)) return "∞";
+  if (n === 0) return "Immediate";
+  return `${n.toFixed(1)} mo`;
 }
 
-function loadStoredInput(): SubleaseInput {
-  if (typeof window === "undefined") return DEFAULT_SUBLEASE_INPUT;
+function fmtPct(n: number): string {
+  if (!Number.isFinite(n)) return "∞";
+  return `${n.toFixed(0)}%`;
+}
+
+// ─── Default state ───────────────────────────────────────────────────────────
+
+function makeEmptyProperty(): PropertyInputs {
+  return {
+    id: crypto.randomUUID(),
+    nickname: "",
+    ...EMPTY_PROPERTY,
+  };
+}
+
+function loadInitialPortfolio(): PortfolioInputs {
+  if (typeof window === "undefined") {
+    return { properties: [makeEmptyProperty()], analysisHorizonMonths: 3 };
+  }
   try {
     const raw = window.localStorage.getItem(STORAGE_KEY);
-    if (!raw) return DEFAULT_SUBLEASE_INPUT;
-    const parsed = SubleaseInputSchema.safeParse(JSON.parse(raw));
-    return parsed.success ? parsed.data : DEFAULT_SUBLEASE_INPUT;
+    if (!raw) {
+      return { properties: [makeEmptyProperty()], analysisHorizonMonths: 3 };
+    }
+    const parsed = JSON.parse(raw) as PortfolioInputs;
+    if (!parsed.properties || parsed.properties.length === 0) {
+      return { properties: [makeEmptyProperty()], analysisHorizonMonths: 3 };
+    }
+    return parsed;
   } catch {
-    return DEFAULT_SUBLEASE_INPUT;
+    return { properties: [makeEmptyProperty()], analysisHorizonMonths: 3 };
   }
+}
+
+// ─── Page ────────────────────────────────────────────────────────────────────
+
+export default function SubleasePage() {
+  const [portfolio, setPortfolio] = useState<PortfolioInputs>(loadInitialPortfolio);
+
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(portfolio));
+    } catch {
+      /* localStorage unavailable; ignore */
+    }
+  }, [portfolio]);
+
+  const portfolioOutputs = useMemo(() => calculatePortfolio(portfolio), [portfolio]);
+
+  const updateProperty = (id: string, updated: PropertyInputs) => {
+    setPortfolio((prev) => ({
+      ...prev,
+      properties: prev.properties.map((p) => (p.id === id ? updated : p)),
+    }));
+  };
+
+  const addProperty = () => {
+    setPortfolio((prev) => ({
+      ...prev,
+      properties: [...prev.properties, makeEmptyProperty()],
+    }));
+  };
+
+  const removeProperty = (id: string) => {
+    setPortfolio((prev) => {
+      const remaining = prev.properties.filter((p) => p.id !== id);
+      return {
+        ...prev,
+        properties: remaining.length === 0 ? [makeEmptyProperty()] : remaining,
+      };
+    });
+  };
+
+  const handleTryExample = () => {
+    setPortfolio((prev) => {
+      const next = [...prev.properties];
+      const firstId = next[0]?.id ?? crypto.randomUUID();
+      next[0] = { id: firstId, ...SLC_SUMMER_PRESET };
+      return { ...prev, properties: next };
+    });
+  };
+
+  const handleResetAll = () => {
+    setPortfolio({
+      properties: [makeEmptyProperty()],
+      analysisHorizonMonths: 3,
+    });
+  };
+
+  const setHorizon = (n: number) => {
+    setPortfolio((prev) => ({ ...prev, analysisHorizonMonths: n }));
+  };
+
+  return (
+    <>
+      <Navbar />
+      <main className="container pt-32 pb-16 space-y-6 font-sans tabular-nums">
+        <SubleaseHeader
+          horizon={portfolio.analysisHorizonMonths}
+          onHorizonChange={setHorizon}
+          onTryExample={handleTryExample}
+          onResetAll={handleResetAll}
+        />
+
+        <PortfolioSummary outputs={portfolioOutputs} horizon={portfolio.analysisHorizonMonths} />
+
+        <PortfolioComparison
+          properties={portfolio.properties}
+          outputs={portfolioOutputs.perProperty}
+        />
+
+        <SensitivityChart properties={portfolio.properties} />
+
+        <CashflowWaterfall
+          outputs={portfolioOutputs.perProperty}
+          horizon={portfolio.analysisHorizonMonths}
+        />
+
+        <div className="space-y-4">
+          {portfolio.properties.map((p, idx) => (
+            <PropertyCard
+              key={p.id}
+              property={p}
+              outputs={portfolioOutputs.perProperty[idx]}
+              canRemove={portfolio.properties.length > 1}
+              onChange={(updated) => updateProperty(p.id, updated)}
+              onRemove={() => removeProperty(p.id)}
+            />
+          ))}
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={addProperty} className="gap-2">
+            <Plus className="h-4 w-4" />
+            Add property / 添加房源
+          </Button>
+          <Button variant="outline" onClick={handleTryExample} className="gap-2">
+            <Sparkles className="h-4 w-4" />
+            Try example / 示例数据
+          </Button>
+        </div>
+      </main>
+    </>
+  );
+}
+
+// ─── Header ──────────────────────────────────────────────────────────────────
+
+function SubleaseHeader({
+  horizon,
+  onHorizonChange,
+  onTryExample,
+  onResetAll,
+}: {
+  horizon: number;
+  onHorizonChange: (n: number) => void;
+  onTryExample: () => void;
+  onResetAll: () => void;
+}) {
+  return (
+    <header className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-4">
+      <div>
+        <h1 className="text-2xl font-semibold tracking-tight flex items-center gap-2">
+          <Bed className="h-7 w-7 text-orange-500" />
+          Sublease Calculator
+          <span className="text-muted-foreground font-normal">/ 转租收益计算器</span>
+        </h1>
+        <p className="text-sm text-muted-foreground mt-1 max-w-2xl">
+          Calculate Airbnb sublet profit for properties you lease from owners. /
+          从业主处租来后做 Airbnb 短租的套利利润计算。
+        </p>
+      </div>
+
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex items-center gap-2">
+          <Label className="text-xs text-muted-foreground">
+            Analysis horizon / 分析周期
+          </Label>
+          <Select value={String(horizon)} onValueChange={(v) => onHorizonChange(Number(v))}>
+            <SelectTrigger className="h-9 w-32">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {[1, 2, 3, 6, 9, 12, 18, 24].map((m) => (
+                <SelectItem key={m} value={String(m)}>
+                  {m} mo
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+        <Button variant="outline" size="sm" onClick={onTryExample} className="gap-2">
+          <Sparkles className="h-4 w-4" />
+          Try example / 示例数据
+        </Button>
+        <Button variant="ghost" size="sm" onClick={onResetAll} className="gap-2">
+          <RotateCcw className="h-4 w-4" />
+          Reset all / 清空
+        </Button>
+      </div>
+    </header>
+  );
+}
+
+// ─── Portfolio summary KPI cards ─────────────────────────────────────────────
+
+function PortfolioSummary({
+  outputs,
+  horizon,
+}: {
+  outputs: ReturnType<typeof calculatePortfolio>;
+  horizon: number;
+}) {
+  const netColor = (n: number) =>
+    n > 0 ? "text-emerald-600" : n < 0 ? "text-rose-600" : "text-gray-700";
+
+  return (
+    <section className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <KpiCard
+        label="Total monthly net"
+        labelZh="月均净利润"
+        value={fmtMoney(outputs.totalMonthlyNet)}
+        valueClass={netColor(outputs.totalMonthlyNet)}
+      />
+      <KpiCard
+        label="Total setup cost"
+        labelZh="一次性投入"
+        value={fmtMoney(outputs.totalSetupCost)}
+      />
+      <KpiCard
+        label="Portfolio payback"
+        labelZh="回本月数"
+        value={fmtPayback(outputs.portfolioPaybackMonths)}
+      />
+      <KpiCard
+        label={`${horizon}-mo total net`}
+        labelZh={`${horizon} 月总净利`}
+        value={fmtMoney(outputs.totalPeriodNet)}
+        valueClass={netColor(outputs.totalPeriodNet)}
+      />
+    </section>
+  );
+}
+
+function KpiCard({
+  label,
+  labelZh,
+  value,
+  valueClass,
+}: {
+  label: string;
+  labelZh: string;
+  value: string;
+  valueClass?: string;
+}) {
+  return (
+    <Card>
+      <CardContent className="p-4">
+        <div className="text-[11px] text-muted-foreground uppercase tracking-wide">
+          {label}
+        </div>
+        <div className="text-[11px] text-muted-foreground">{labelZh}</div>
+        <div className={`mt-2 text-2xl font-bold ${valueClass ?? ""}`}>{value}</div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── Comparison table (only when 2+ properties) ──────────────────────────────
+
+function PortfolioComparison({
+  properties,
+  outputs,
+}: {
+  properties: PropertyInputs[];
+  outputs: PropertyOutputs[];
+}) {
+  if (properties.length <= 1) return null;
+
+  const rows: Array<{ label: string; labelZh: string; value: (o: PropertyOutputs) => string; valueClass?: (o: PropertyOutputs) => string }> = [
+    {
+      label: "Monthly net",
+      labelZh: "月净利",
+      value: (o) => fmtMoney(o.monthlyNetProfit),
+      valueClass: (o) =>
+        o.monthlyNetProfit > 0 ? "text-emerald-600" : o.monthlyNetProfit < 0 ? "text-rose-600" : "",
+    },
+    { label: "Monthly revenue", labelZh: "月营收", value: (o) => fmtMoney(o.monthlyRevenue) },
+    { label: "Operating cost", labelZh: "月运营", value: (o) => fmtMoney(o.monthlyOperatingCost) },
+    { label: "Setup cost", labelZh: "一次性投入", value: (o) => fmtMoney(o.totalSetupCost) },
+    { label: "Payback", labelZh: "回本月数", value: (o) => fmtPayback(o.paybackMonths) },
+    { label: "Annual ROI", labelZh: "年化 ROI", value: (o) => fmtPct(o.annualROI) },
+    {
+      label: "Total period net",
+      labelZh: "周期总净利",
+      value: (o) => fmtMoney(o.totalPeriodNet),
+      valueClass: (o) =>
+        o.totalPeriodNet > 0 ? "text-emerald-600" : o.totalPeriodNet < 0 ? "text-rose-600" : "",
+    },
+  ];
+
+  return (
+    <Card>
+      <CardContent className="p-4">
+        <h2 className="text-base font-semibold mb-3">
+          Property comparison / 多套对比
+        </h2>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b">
+                <th className="text-left py-2 pr-4 font-medium text-muted-foreground">Metric</th>
+                {properties.map((p, i) => (
+                  <th key={p.id} className="text-right py-2 px-3 font-medium">
+                    {p.nickname || `Property ${i + 1}`}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row) => (
+                <tr key={row.label} className="border-b last:border-0">
+                  <td className="py-2 pr-4 text-muted-foreground">
+                    {row.label}
+                    <span className="text-xs text-muted-foreground/70 ml-2">{row.labelZh}</span>
+                  </td>
+                  {outputs.map((o, i) => (
+                    <td
+                      key={i}
+                      className={`text-right py-2 px-3 tabular-nums ${row.valueClass?.(o) ?? ""}`}
+                    >
+                      {row.value(o)}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── Sensitivity chart (occupancy 40%-90%) ───────────────────────────────────
+
+function SensitivityChart({ properties }: { properties: PropertyInputs[] }) {
+  const data = useMemo(() => {
+    const rows: Array<Record<string, number>> = [];
+    for (let occ = 40; occ <= 90; occ += 5) {
+      const sweep = properties.map((p) => calculateProperty({ ...p, occupancyRate: occ }));
+      const row: Record<string, number> = { occupancy: occ };
+      let total = 0;
+      sweep.forEach((r, i) => {
+        const key = properties[i].nickname || `Property ${i + 1}`;
+        row[key] = Math.round(r.monthlyNetProfit);
+        total += r.monthlyNetProfit;
+      });
+      row["Total"] = Math.round(total);
+      rows.push(row);
+    }
+    return rows;
+  }, [properties]);
+
+  return (
+    <Card>
+      <CardContent className="p-4">
+        <h2 className="text-base font-semibold mb-1">
+          Sensitivity to occupancy / 占用率敏感度
+        </h2>
+        <p className="text-xs text-muted-foreground mb-3">
+          Monthly net profit across a 40–90% occupancy sweep. Bold black line = portfolio total.
+        </p>
+        <div className="h-72">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={data} margin={{ top: 5, right: 16, left: 0, bottom: 16 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+              <XAxis
+                dataKey="occupancy"
+                tickFormatter={(v) => `${v}%`}
+                style={{ fontSize: 12 }}
+              />
+              <YAxis tickFormatter={(v: number) => fmtMoney(v)} style={{ fontSize: 12 }} />
+              <RechartsTooltip
+                formatter={(v: number, name) => [fmtMoney(v), String(name)]}
+                labelFormatter={(v) => `Occupancy: ${v}%`}
+              />
+              <ReferenceLine y={0} stroke="#9ca3af" strokeDasharray="2 2" />
+              <Legend wrapperStyle={{ fontSize: 12 }} />
+              {properties.map((p, i) => (
+                <Line
+                  key={p.id}
+                  type="monotone"
+                  dataKey={p.nickname || `Property ${i + 1}`}
+                  stroke={SERIES_COLORS[i % SERIES_COLORS.length]}
+                  strokeWidth={1.5}
+                  dot={false}
+                />
+              ))}
+              {properties.length > 1 && (
+                <Line
+                  type="monotone"
+                  dataKey="Total"
+                  stroke="#000"
+                  strokeWidth={2.5}
+                  dot={false}
+                />
+              )}
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── Cashflow waterfall ──────────────────────────────────────────────────────
+
+function CashflowWaterfall({
+  outputs,
+  horizon,
+}: {
+  outputs: PropertyOutputs[];
+  horizon: number;
+}) {
+  const data = useMemo(() => {
+    const rows: Array<{ month: string; monthly: number; cumulative: number }> = [];
+    let cumulative = 0;
+    for (let m = 0; m < horizon; m++) {
+      const monthly = outputs.reduce((s, o) => s + (o.monthlyCashflows[m] ?? 0), 0);
+      cumulative += monthly;
+      rows.push({ month: `M${m + 1}`, monthly: Math.round(monthly), cumulative: Math.round(cumulative) });
+    }
+    return rows;
+  }, [outputs, horizon]);
+
+  return (
+    <Card>
+      <CardContent className="p-4">
+        <h2 className="text-base font-semibold mb-1">
+          Cash flow over {horizon} months / {horizon} 个月现金流
+        </h2>
+        <p className="text-xs text-muted-foreground mb-3">
+          Bars = monthly cashflow (green positive, red negative). Line = cumulative.
+        </p>
+        <div className="h-72">
+          <ResponsiveContainer width="100%" height="100%">
+            <ComposedChart data={data} margin={{ top: 5, right: 16, left: 0, bottom: 16 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
+              <XAxis dataKey="month" style={{ fontSize: 12 }} />
+              <YAxis tickFormatter={(v: number) => fmtMoney(v)} style={{ fontSize: 12 }} />
+              <RechartsTooltip
+                formatter={(v: number, name) => [fmtMoney(v), String(name)]}
+              />
+              <ReferenceLine y={0} stroke="#000" strokeDasharray="3 3" />
+              <Legend wrapperStyle={{ fontSize: 12 }} />
+              <Bar dataKey="monthly" name="Monthly cashflow / 当月">
+                {data.map((entry, idx) => (
+                  <Cell key={idx} fill={entry.monthly >= 0 ? "#10B981" : "#EF4444"} />
+                ))}
+              </Bar>
+              <Line
+                type="monotone"
+                dataKey="cumulative"
+                name="Cumulative / 累计"
+                stroke="#3B82F6"
+                strokeWidth={2}
+                dot
+              />
+            </ComposedChart>
+          </ResponsiveContainer>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── Property card ───────────────────────────────────────────────────────────
+
+function PropertyCard({
+  property,
+  outputs,
+  canRemove,
+  onChange,
+  onRemove,
+}: {
+  property: PropertyInputs;
+  outputs: PropertyOutputs;
+  canRemove: boolean;
+  onChange: (p: PropertyInputs) => void;
+  onRemove: () => void;
+}) {
+  const [expanded, setExpanded] = useState(true);
+  const netColor =
+    outputs.monthlyNetProfit > 0
+      ? "text-emerald-600"
+      : outputs.monthlyNetProfit < 0
+        ? "text-rose-600"
+        : "text-gray-700";
+
+  const set = <K extends keyof PropertyInputs>(key: K, v: PropertyInputs[K]) =>
+    onChange({ ...property, [key]: v });
+
+  return (
+    <Card>
+      <CardContent className="p-5">
+        <header className="flex items-center justify-between gap-3">
+          <button
+            type="button"
+            className="flex-1 flex items-center gap-3 text-left"
+            onClick={() => setExpanded((e) => !e)}
+          >
+            <ChevronDown
+              className={`h-4 w-4 text-muted-foreground transition-transform ${
+                expanded ? "rotate-0" : "-rotate-90"
+              }`}
+            />
+            <div>
+              <h2 className="text-base font-semibold">
+                {property.nickname || "Untitled property / 未命名"}
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                Monthly net / 月净利:{" "}
+                <span className={`font-medium ${netColor}`}>
+                  {fmtMoney(outputs.monthlyNetProfit)}
+                </span>
+                {" · "}
+                Payback / 回本: {fmtPayback(outputs.paybackMonths)}
+              </p>
+            </div>
+          </button>
+          <Button
+            type="button"
+            variant="ghost"
+            size="icon"
+            disabled={!canRemove}
+            onClick={onRemove}
+            aria-label="Remove property"
+          >
+            {canRemove ? <Trash2 className="h-4 w-4" /> : <X className="h-4 w-4 opacity-30" />}
+          </Button>
+        </header>
+
+        {expanded && (
+          <div className="mt-5 space-y-6">
+            <Section title="1. Identification / 识别">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <TextField
+                  label="Nickname"
+                  labelZh="备注名"
+                  value={property.nickname}
+                  onChange={(v) => set("nickname", v)}
+                  placeholder="e.g. SLC summer A"
+                />
+              </div>
+            </Section>
+
+            <Section title="2. Lease cost / 收房成本">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <NumField
+                  label="Monthly rent to owner"
+                  labelZh="付给业主月租"
+                  value={property.monthlyRentToOwner}
+                  onChange={(v) => set("monthlyRentToOwner", v)}
+                  step={50}
+                  suffix="$"
+                  tooltip="Monthly rent you pay to the property owner / 你每月付给业主的租金"
+                />
+                <NumField
+                  label="Initial deposit"
+                  labelZh="押金"
+                  value={property.initialDeposit}
+                  onChange={(v) => set("initialDeposit", v)}
+                  step={50}
+                  suffix="$"
+                />
+                <NumField
+                  label="Lease length"
+                  labelZh="签约月数"
+                  value={property.leaseLengthMonths}
+                  onChange={(v) => set("leaseLengthMonths", v)}
+                  min={1}
+                  max={24}
+                  suffix="mo"
+                />
+                <ToggleField
+                  label="Deposit refundable"
+                  labelZh="押金可退"
+                  checked={property.depositRefundable}
+                  onChange={(v) => set("depositRefundable", v)}
+                />
+              </div>
+            </Section>
+
+            <Section title="3. Setup cost / 一次性投入">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <NumField
+                  label="Furniture"
+                  labelZh="家具"
+                  value={property.furnitureCost}
+                  onChange={(v) => set("furnitureCost", v)}
+                  step={50}
+                  suffix="$"
+                />
+                <NumField
+                  label="Renovation"
+                  labelZh="装修"
+                  value={property.renovationCost}
+                  onChange={(v) => set("renovationCost", v)}
+                  step={100}
+                  suffix="$"
+                />
+                <NumField
+                  label="Initial deep clean"
+                  labelZh="首次深度清洁"
+                  value={property.initialDeepClean}
+                  onChange={(v) => set("initialDeepClean", v)}
+                  step={20}
+                  suffix="$"
+                />
+                <NumField
+                  label="Photography"
+                  labelZh="拍照费"
+                  value={property.photographyCost}
+                  onChange={(v) => set("photographyCost", v)}
+                  step={20}
+                  suffix="$"
+                />
+              </div>
+            </Section>
+
+            <Section title="4. Airbnb revenue / 短租营收">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+                <NumField
+                  label="Peak ADR"
+                  labelZh="旺季每晚"
+                  value={property.peakAdr}
+                  onChange={(v) => set("peakAdr", v)}
+                  step={5}
+                  suffix="$"
+                  tooltip="Average daily rate during peak season / 旺季平均每晚价"
+                />
+                <NumField
+                  label="Off-season ADR"
+                  labelZh="淡季每晚"
+                  value={property.offSeasonAdr}
+                  onChange={(v) => set("offSeasonAdr", v)}
+                  step={5}
+                  suffix="$"
+                />
+                <PctField
+                  label="Occupancy rate"
+                  labelZh="占用率"
+                  value={property.occupancyRate}
+                  onChange={(v) => set("occupancyRate", v)}
+                  step={1}
+                  max={100}
+                />
+                <NumField
+                  label="Avg nights / booking"
+                  labelZh="平均每次入住"
+                  value={property.avgNightsPerBooking}
+                  onChange={(v) => set("avgNightsPerBooking", v)}
+                  step={0.5}
+                  min={1}
+                  suffix="night"
+                />
+              </div>
+              <div className="mt-4">
+                <MonthRangeField
+                  label="Peak season"
+                  labelZh="旺季月份"
+                  startMonth={property.peakSeasonStartMonth}
+                  endMonth={property.peakSeasonEndMonth}
+                  onStartChange={(v) => set("peakSeasonStartMonth", v)}
+                  onEndChange={(v) => set("peakSeasonEndMonth", v)}
+                  tooltip="Wraps around year-end (e.g. Nov→Feb is valid) / 可跨年(如 11月→2月)"
+                />
+              </div>
+            </Section>
+
+            <Section title="5. Operating cost / 月运营成本">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <NumField
+                  label="Utilities"
+                  labelZh="水电网"
+                  value={property.utilities}
+                  onChange={(v) => set("utilities", v)}
+                  step={10}
+                  suffix="$/mo"
+                  disabled={property.utilitiesIncludedInLease}
+                />
+                <ToggleField
+                  label="Utilities incl. in lease"
+                  labelZh="业主包水电"
+                  checked={property.utilitiesIncludedInLease}
+                  onChange={(v) => set("utilitiesIncludedInLease", v)}
+                />
+                <NumField
+                  label="Cleaning per turnover"
+                  labelZh="每次清洁"
+                  value={property.cleaningPerTurnover}
+                  onChange={(v) => set("cleaningPerTurnover", v)}
+                  step={5}
+                  suffix="$"
+                  disabled={property.cleaningPassedToGuest}
+                />
+                <ToggleField
+                  label="Cleaning passed to guest"
+                  labelZh="清洁费转嫁客人"
+                  checked={property.cleaningPassedToGuest}
+                  onChange={(v) => set("cleaningPassedToGuest", v)}
+                />
+                <NumField
+                  label="Supplies"
+                  labelZh="日用品"
+                  value={property.supplies}
+                  onChange={(v) => set("supplies", v)}
+                  step={10}
+                  suffix="$/mo"
+                />
+                <NumField
+                  label="Maintenance reserve"
+                  labelZh="维修预留"
+                  value={property.maintenanceReserve}
+                  onChange={(v) => set("maintenanceReserve", v)}
+                  step={10}
+                  suffix="$/mo"
+                />
+                <NumField
+                  label="STR insurance"
+                  labelZh="短租保险"
+                  value={property.strInsurance}
+                  onChange={(v) => set("strInsurance", v)}
+                  step={5}
+                  suffix="$/mo"
+                />
+              </div>
+            </Section>
+
+            <Section title="6. Risk / 风险">
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <PctField
+                  label="Damage / deposit hold rate"
+                  labelZh="押金扣除概率"
+                  value={property.damageDepositHoldRate}
+                  onChange={(v) => set("damageDepositHoldRate", v)}
+                  step={0.5}
+                  max={50}
+                  tooltip="Approx % of revenue lost to damage holds / 估计每月有多少营收被押金扣留"
+                />
+              </div>
+            </Section>
+
+            <Section title="7. Platform & tax / 平台与税">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                <NumField
+                  label="Airbnb host fee"
+                  labelZh="Airbnb 抽佣"
+                  value={property.airbnbHostFeeRate * 100}
+                  onChange={(v) => set("airbnbHostFeeRate", v / 100)}
+                  step={0.5}
+                  max={20}
+                  suffix="%"
+                  tooltip="Locked at 3% by default / 默认 3%"
+                />
+                <ToggleField
+                  label="Lodging tax handled by Airbnb"
+                  labelZh="Airbnb 代收住宿税"
+                  checked={property.lodgingTaxHandledByAirbnb}
+                  onChange={(v) => set("lodgingTaxHandledByAirbnb", v)}
+                />
+                {!property.lodgingTaxHandledByAirbnb && (
+                  <PctField
+                    label="Manual lodging tax"
+                    labelZh="手动住宿税率"
+                    value={property.manualLodgingTaxRate}
+                    onChange={(v) => set("manualLodgingTaxRate", v)}
+                    step={0.5}
+                    max={30}
+                  />
+                )}
+                <PctField
+                  label="Income tax"
+                  labelZh="所得税率"
+                  value={property.incomeTaxRate}
+                  onChange={(v) => set("incomeTaxRate", v)}
+                  step={1}
+                  max={50}
+                />
+              </div>
+            </Section>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ─── Field primitives ────────────────────────────────────────────────────────
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section>
+      <h3 className="text-sm font-semibold text-gray-700 mb-3">{title}</h3>
+      {children}
+    </section>
+  );
+}
+
+function FieldHeader({
+  label,
+  labelZh,
+  tooltip,
+}: {
+  label: string;
+  labelZh?: string;
+  tooltip?: string;
+}) {
+  return (
+    <Label className="text-sm flex items-center gap-1">
+      <span>{label}</span>
+      {labelZh && <span className="text-muted-foreground font-normal">/ {labelZh}</span>}
+      {tooltip && <InfoTooltip content={tooltip} />}
+    </Label>
+  );
 }
 
 function NumField({
   label,
+  labelZh,
   value,
   onChange,
   step = 1,
+  min,
+  max,
   suffix,
-  hint,
+  tooltip,
+  disabled,
 }: {
   label: string;
+  labelZh?: string;
   value: number;
   onChange: (n: number) => void;
   step?: number;
+  min?: number;
+  max?: number;
   suffix?: string;
-  hint?: string;
+  tooltip?: string;
+  disabled?: boolean;
 }) {
-  // Display empty string for 0 so the placeholder shows; this prevents the
-  // "0150" prefix-residue users see when they type into a value="0" field.
-  // Non-zero defaults (e.g. vacancyRate=5, cleaning=50) still render normally.
+  // Display empty string for 0 so the placeholder shows; prevents "0150"
+  // prefix-residue when typing into a value="0" field.
   const displayValue = !Number.isFinite(value) || value === 0 ? "" : value;
-
   return (
     <div className="space-y-1.5">
-      <Label className="text-sm">{label}</Label>
+      <FieldHeader label={label} labelZh={labelZh} tooltip={tooltip} />
       <div className="relative">
         <Input
           type="number"
           inputMode="decimal"
           step={step}
+          min={min}
+          max={max}
           value={displayValue}
           placeholder="0"
+          disabled={disabled}
           onChange={(e) => {
             const raw = e.target.value;
             if (raw === "") {
@@ -94,436 +970,156 @@ function NumField({
             const v = parseFloat(raw);
             onChange(Number.isFinite(v) ? v : 0);
           }}
-          className={suffix ? "pr-12 no-spinner tabular-nums" : "no-spinner tabular-nums"}
+          className={`${suffix ? "pr-12" : ""} no-spinner tabular-nums`.trim()}
         />
         {suffix && (
-          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">
+          <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-muted-foreground pointer-events-none">
             {suffix}
           </span>
         )}
       </div>
-      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
     </div>
   );
 }
 
 function PctField({
   label,
+  labelZh,
   value,
   onChange,
   step = 1,
-  hint,
+  max,
+  tooltip,
 }: {
   label: string;
+  labelZh?: string;
   value: number;
   onChange: (n: number) => void;
   step?: number;
-  hint?: string;
+  max?: number;
+  tooltip?: string;
 }) {
   return (
     <NumField
       label={label}
-      value={value * 100}
-      onChange={(n) => onChange(n / 100)}
+      labelZh={labelZh}
+      value={value}
+      onChange={onChange}
       step={step}
+      max={max}
       suffix="%"
-      hint={hint}
+      tooltip={tooltip}
     />
   );
 }
 
-export default function SubleasePage() {
-  const { t } = useLanguage();
-  const [inputs, setInputs] = useState<SubleaseInput>(loadStoredInput());
-  const [advancedOpen, setAdvancedOpen] = useState(false);
-  const [sensitivityRent, setSensitivityRent] = useState<number | null>(null);
-
-  useEffect(() => {
-    try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(inputs));
-    } catch {
-      /* localStorage unavailable; ignore */
-    }
-  }, [inputs]);
-
-  const out = useMemo(() => calculateSublease(inputs), [inputs]);
-
-  const update = <K extends keyof SubleaseInput>(key: K) => (v: SubleaseInput[K]) =>
-    setInputs((prev) => ({ ...prev, [key]: v }));
-
-  const reset = () => {
-    setInputs(DEFAULT_SUBLEASE_INPUT);
-    setSensitivityRent(null);
-  };
-
-  const sensitivityBase = sensitivityRent ?? inputs.expectedRent;
-  const sensitivityData = useMemo(() => {
-    const base = inputs.expectedRent;
-    const points: Array<{ rent: number; profit: number }> = [];
-    const min = base * 0.8;
-    const max = base * 1.2;
-    const steps = 41;
-    for (let i = 0; i < steps; i++) {
-      const rent = min + ((max - min) * i) / (steps - 1);
-      const r = calculateSublease({ ...inputs, expectedRent: rent });
-      points.push({ rent: Math.round(rent), profit: Math.round(r.monthlyNetProfit) });
-    }
-    return points;
-  }, [inputs]);
-
-  const profitColor = (n: number) => (n > 0 ? "text-emerald-600" : n < 0 ? "text-rose-600" : "text-gray-700");
-  const paybackColor = (n: number) =>
-    !Number.isFinite(n) ? "text-rose-600" : n <= 12 ? "text-emerald-600" : n <= 24 ? "text-amber-600" : "text-rose-600";
-
-  const paybackDisplay = !Number.isFinite(out.paybackMonths)
-    ? t("sublease.kpi.never")
-    : `${out.paybackMonths} ${t("sublease.kpi.months")}`;
-
+function TextField({
+  label,
+  labelZh,
+  value,
+  onChange,
+  placeholder,
+}: {
+  label: string;
+  labelZh?: string;
+  value: string;
+  onChange: (s: string) => void;
+  placeholder?: string;
+}) {
   return (
-    <>
-      <Navbar />
-      <main className="container pt-32 pb-16 space-y-6 font-sans tabular-nums">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-          <div>
-            <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
-              <Bed className="h-8 w-8 text-orange-500" />
-              {t("sublease.title")}
-            </h1>
-            <p className="text-muted-foreground mt-1 max-w-2xl">{t("sublease.subtitle")}</p>
-          </div>
-          <Button variant="outline" onClick={reset} className="gap-2 self-start">
-            <RotateCcw className="h-4 w-4" />
-            {t("sublease.reset")}
-          </Button>
-        </div>
-
-        {/* KPI Cards */}
-        <section className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <Card>
-            <CardContent className="p-5">
-              <div className="text-xs text-muted-foreground uppercase tracking-wide">
-                {t("sublease.kpi.monthlyNet")}
-              </div>
-              <div className={`mt-2 text-3xl font-bold ${profitColor(out.monthlyNetProfit)}`}>
-                {safeUSD(out.monthlyNetProfit)}
-              </div>
-              <div className="text-xs text-muted-foreground mt-1">
-                {t("sublease.kpi.annual")}: {safeUSD(out.annualNetProfit)}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="p-5">
-              <div className="text-xs text-muted-foreground uppercase tracking-wide">
-                {t("sublease.kpi.payback")}
-              </div>
-              <div className={`mt-2 text-3xl font-bold ${paybackColor(out.paybackMonths)}`}>
-                {paybackDisplay}
-              </div>
-              <div className="text-xs text-muted-foreground mt-1">
-                {t("sublease.kpi.upfrontInvest")}: {safeUSD(inputs.setupCost + inputs.securityDeposit)}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardContent className="p-5">
-              <div className="text-xs text-muted-foreground uppercase tracking-wide">
-                {t("sublease.kpi.annualROI")}
-              </div>
-              <div className={`mt-2 text-3xl font-bold ${profitColor(out.annualROI)}`}>
-                {safePct(out.annualROI)}
-              </div>
-              <div className="text-xs text-muted-foreground mt-1">
-                NPV: {safeUSD(out.npv)}
-              </div>
-            </CardContent>
-          </Card>
-        </section>
-
-        {/* Input form */}
-        <Card>
-          <CardHeader>
-            <CardTitle>{t("sublease.form.title")}</CardTitle>
-            <CardDescription>{t("sublease.form.desc")}</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            <fieldset className="space-y-3">
-              <legend className="text-sm font-semibold text-gray-700">{t("sublease.form.leaseIn")}</legend>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <NumField
-                  label={t("sublease.f.leaseInRent")}
-                  value={inputs.leaseInRent}
-                  onChange={update("leaseInRent")}
-                  step={50}
-                  suffix="$"
-                  hint={t("sublease.f.leaseInRent.hint")}
-                />
-                <NumField
-                  label={t("sublease.f.leaseTermMonths")}
-                  value={inputs.leaseTermMonths}
-                  onChange={update("leaseTermMonths")}
-                />
-                <NumField
-                  label={t("sublease.f.securityDeposit")}
-                  value={inputs.securityDeposit}
-                  onChange={update("securityDeposit")}
-                  step={50}
-                  suffix="$"
-                />
-                <NumField
-                  label={t("sublease.f.setupCost")}
-                  value={inputs.setupCost}
-                  onChange={update("setupCost")}
-                  step={100}
-                  suffix="$"
-                  hint={t("sublease.f.setupCost.hint")}
-                />
-              </div>
-            </fieldset>
-
-            <fieldset className="space-y-3">
-              <legend className="text-sm font-semibold text-gray-700">{t("sublease.form.leaseOut")}</legend>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <NumField
-                  label={t("sublease.f.expectedRent")}
-                  value={inputs.expectedRent}
-                  onChange={update("expectedRent")}
-                  step={50}
-                  suffix="$"
-                  hint={t("sublease.f.expectedRent.hint")}
-                />
-                <PctField
-                  label={t("sublease.f.vacancyRate")}
-                  value={inputs.vacancyRate}
-                  onChange={update("vacancyRate")}
-                  step={1}
-                />
-                <PctField
-                  label={t("sublease.f.platformFee")}
-                  value={inputs.platformFee}
-                  onChange={update("platformFee")}
-                  step={1}
-                />
-              </div>
-            </fieldset>
-
-            <fieldset className="space-y-3">
-              <legend className="text-sm font-semibold text-gray-700">{t("sublease.form.operating")}</legend>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <NumField label={t("sublease.f.utilities")} value={inputs.utilities} onChange={update("utilities")} step={10} suffix="$" />
-                <NumField label={t("sublease.f.cleaning")} value={inputs.cleaning} onChange={update("cleaning")} step={10} suffix="$" />
-                <NumField label={t("sublease.f.other")} value={inputs.other} onChange={update("other")} step={10} suffix="$" />
-              </div>
-            </fieldset>
-
-            <Collapsible open={advancedOpen} onOpenChange={setAdvancedOpen}>
-              <CollapsibleTrigger asChild>
-                <button className="flex items-center gap-2 text-sm font-medium text-gray-700 hover:text-gray-900 transition-colors">
-                  <ChevronDown className={`h-4 w-4 transition-transform ${advancedOpen ? "rotate-180" : ""}`} />
-                  {t("sublease.form.advanced")}
-                </button>
-              </CollapsibleTrigger>
-              <CollapsibleContent className="pt-3">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  <PctField
-                    label={t("sublease.f.rentEscalation")}
-                    value={inputs.rentEscalation}
-                    onChange={update("rentEscalation")}
-                    step={0.5}
-                    hint={t("sublease.f.rentEscalation.hint")}
-                  />
-                  <PctField
-                    label={t("sublease.f.priceGrowth")}
-                    value={inputs.priceGrowth}
-                    onChange={update("priceGrowth")}
-                    step={0.5}
-                    hint={t("sublease.f.priceGrowth.hint")}
-                  />
-                  <PctField
-                    label={t("sublease.f.discountRate")}
-                    value={inputs.discountRate}
-                    onChange={update("discountRate")}
-                    step={0.5}
-                    hint={t("sublease.f.discountRate.hint")}
-                  />
-                </div>
-              </CollapsibleContent>
-            </Collapsible>
-          </CardContent>
-        </Card>
-
-        {/* Max Breakeven Rent */}
-        <Card className="border-orange-200 bg-gradient-to-br from-orange-50 to-amber-50">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2">
-              <Sparkles className="h-5 w-5 text-orange-600" />
-              {t("sublease.breakeven.title")}
-            </CardTitle>
-            <CardDescription className="text-gray-700">
-              {t("sublease.breakeven.subtitle")}
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <BreakevenCard
-                tone="warn"
-                icon={AlertTriangle}
-                label={t("sublease.breakeven.tier.breakeven")}
-                margin={t("sublease.breakeven.margin0")}
-                value={out.maxBreakevenRent.breakeven}
-              />
-              <BreakevenCard
-                tone="primary"
-                icon={CheckCircle2}
-                label={t("sublease.breakeven.tier.healthy")}
-                margin={t("sublease.breakeven.margin20")}
-                value={out.maxBreakevenRent.healthy}
-                highlight
-              />
-              <BreakevenCard
-                tone="excellent"
-                icon={TrendingUp}
-                label={t("sublease.breakeven.tier.excellent")}
-                margin={t("sublease.breakeven.margin35")}
-                value={out.maxBreakevenRent.excellent}
-              />
-            </div>
-            <p className="mt-4 text-sm text-gray-700">
-              <strong>{t("sublease.breakeven.decisionLine")}</strong>{" "}
-              <span className="text-gray-600">{t("sublease.breakeven.decisionExplain")}</span>
-            </p>
-          </CardContent>
-        </Card>
-
-        {/* Sensitivity */}
-        <Card>
-          <CardHeader>
-            <CardTitle>{t("sublease.sensitivity.title")}</CardTitle>
-            <CardDescription>{t("sublease.sensitivity.subtitle")}</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <div>
-              <div className="flex items-center justify-between text-sm mb-2">
-                <span>
-                  {t("sublease.sensitivity.simulate")}: <strong>{safeUSD(sensitivityBase)}</strong>
-                </span>
-                <span className="text-muted-foreground">
-                  {t("sublease.sensitivity.range")}: {safeUSD(inputs.expectedRent * 0.8)} – {safeUSD(inputs.expectedRent * 1.2)}
-                </span>
-              </div>
-              <Slider
-                min={Math.round(inputs.expectedRent * 0.8)}
-                max={Math.round(inputs.expectedRent * 1.2)}
-                step={10}
-                value={[Math.round(sensitivityBase)]}
-                onValueChange={(v) => setSensitivityRent(v[0])}
-              />
-            </div>
-
-            <div className="h-64">
-              <ResponsiveContainer width="100%" height="100%">
-                <LineChart data={sensitivityData} margin={{ top: 5, right: 16, left: 0, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-                  <XAxis
-                    dataKey="rent"
-                    tickFormatter={(v) => `$${v}`}
-                    style={{ fontSize: 12 }}
-                  />
-                  <YAxis tickFormatter={(v) => `$${v}`} style={{ fontSize: 12 }} />
-                  <Tooltip
-                    formatter={(v: number) => [safeUSD(v), t("sublease.sensitivity.profitTooltip")]}
-                    labelFormatter={(v) => `${t("sublease.sensitivity.rentTooltip")}: ${safeUSD(Number(v))}`}
-                  />
-                  <ReferenceLine y={0} stroke="#9ca3af" strokeDasharray="2 2" />
-                  <ReferenceLine x={Math.round(sensitivityBase)} stroke="#f97316" strokeDasharray="2 2" />
-                  <Line type="monotone" dataKey="profit" stroke="#f97316" strokeWidth={2} dot={false} />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          </CardContent>
-        </Card>
-
-        {/* Cashflow table */}
-        <Card>
-          <CardHeader>
-            <CardTitle>{t("sublease.cashflow.title")}</CardTitle>
-            <CardDescription>{t("sublease.cashflow.subtitle")}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <div className="max-h-96 overflow-auto rounded-md border">
-              <table className="min-w-full text-sm">
-                <thead className="bg-gray-50 sticky top-0">
-                  <tr>
-                    <th className="px-3 py-2 text-left font-medium">{t("sublease.cashflow.col.month")}</th>
-                    <th className="px-3 py-2 text-right font-medium">{t("sublease.cashflow.col.leaseIn")}</th>
-                    <th className="px-3 py-2 text-right font-medium">{t("sublease.cashflow.col.leaseOut")}</th>
-                    <th className="px-3 py-2 text-right font-medium">{t("sublease.cashflow.col.operating")}</th>
-                    <th className="px-3 py-2 text-right font-medium">{t("sublease.cashflow.col.net")}</th>
-                    <th className="px-3 py-2 text-right font-medium">{t("sublease.cashflow.col.cumulative")}</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {out.cashflowSchedule.map((row) => (
-                    <tr key={row.month} className="odd:bg-gray-50/40">
-                      <td className="px-3 py-1.5">{row.month}</td>
-                      <td className="px-3 py-1.5 text-right">{safeUSD(row.leaseIn)}</td>
-                      <td className="px-3 py-1.5 text-right">{safeUSD(row.leaseOut)}</td>
-                      <td className="px-3 py-1.5 text-right">{safeUSD(row.operating)}</td>
-                      <td className={`px-3 py-1.5 text-right font-medium ${profitColor(row.net)}`}>
-                        {safeUSD(row.net)}
-                      </td>
-                      <td className={`px-3 py-1.5 text-right font-medium ${profitColor(row.cumulative)}`}>
-                        {safeUSD(row.cumulative)}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          </CardContent>
-        </Card>
-      </main>
-    </>
+    <div className="space-y-1.5">
+      <FieldHeader label={label} labelZh={labelZh} />
+      <Input
+        type="text"
+        value={value}
+        placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value)}
+      />
+    </div>
   );
 }
 
-function BreakevenCard({
-  tone,
-  icon: Icon,
+function ToggleField({
   label,
-  margin,
-  value,
-  highlight,
+  labelZh,
+  checked,
+  onChange,
+  tooltip,
 }: {
-  tone: "warn" | "primary" | "excellent";
-  icon: React.ComponentType<{ className?: string }>;
   label: string;
-  margin: string;
-  value: number;
-  highlight?: boolean;
+  labelZh?: string;
+  checked: boolean;
+  onChange: (b: boolean) => void;
+  tooltip?: string;
 }) {
-  const colors = {
-    warn: { ring: "border-amber-200", icon: "text-amber-600", text: "text-amber-700" },
-    primary: { ring: "border-orange-300", icon: "text-orange-600", text: "text-orange-700" },
-    excellent: { ring: "border-emerald-200", icon: "text-emerald-600", text: "text-emerald-700" },
-  } as const;
-  const c = colors[tone];
-
   return (
-    <div
-      className={`rounded-xl border ${c.ring} bg-white p-5 ${
-        highlight ? "ring-2 ring-orange-400 shadow-md" : ""
-      }`}
-    >
-      <div className="flex items-center gap-2">
-        <Icon className={`h-5 w-5 ${c.icon}`} />
-        <span className={`text-sm font-semibold ${c.text}`}>{label}</span>
+    <div className="space-y-1.5">
+      <FieldHeader label={label} labelZh={labelZh} tooltip={tooltip} />
+      <div className="flex items-center h-9">
+        <Switch checked={checked} onCheckedChange={onChange} />
       </div>
-      <div className="mt-1 text-xs text-gray-500">{margin}</div>
-      <div className={`mt-3 text-3xl font-bold ${c.text}`}>{safeUSD(value)}</div>
-      <div className="text-xs text-gray-500 mt-1">/mo</div>
     </div>
+  );
+}
+
+function MonthRangeField({
+  label,
+  labelZh,
+  startMonth,
+  endMonth,
+  onStartChange,
+  onEndChange,
+  tooltip,
+}: {
+  label: string;
+  labelZh?: string;
+  startMonth: number;
+  endMonth: number;
+  onStartChange: (n: number) => void;
+  onEndChange: (n: number) => void;
+  tooltip?: string;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <FieldHeader label={label} labelZh={labelZh} tooltip={tooltip} />
+      <div className="flex items-center gap-2">
+        <Select value={String(startMonth)} onValueChange={(v) => onStartChange(Number(v))}>
+          <SelectTrigger className="h-9 w-28">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {MONTH_NAMES_EN.map((m, i) => (
+              <SelectItem key={i + 1} value={String(i + 1)}>
+                {m}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+        <span className="text-muted-foreground">→</span>
+        <Select value={String(endMonth)} onValueChange={(v) => onEndChange(Number(v))}>
+          <SelectTrigger className="h-9 w-28">
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            {MONTH_NAMES_EN.map((m, i) => (
+              <SelectItem key={i + 1} value={String(i + 1)}>
+                {m}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+    </div>
+  );
+}
+
+function InfoTooltip({ content }: { content: string }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <Info className="h-3.5 w-3.5 text-muted-foreground/70 cursor-help inline-block ml-0.5" />
+      </TooltipTrigger>
+      <TooltipContent className="max-w-xs text-xs">{content}</TooltipContent>
+    </Tooltip>
   );
 }
