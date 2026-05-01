@@ -140,3 +140,63 @@ This approach:
 **Skipped this round**: 9, 10 — too speculative without listing detail done first.
 
 ### Phase 1 done. Proceeding to Phase 2.
+
+---
+
+## Hour 3 — Phase 2 + Phase 3 done
+
+### Phase 2 — backend filter additions (commits b32b192 / bfb307c)
+
+- `apartmentFiltersSchema` now accepts `isSublease` and `subleaseAvailableThrough`
+- `getApartments()` adds two corresponding WHERE clauses, with documented "undefined = no preference" semantics so existing /apartments stays untouched
+- 24/24 apartments tests + 10/10 sublease tests still pass
+- Caught and fixed a side-issue: stray `tools/lehi-scraper/public/` and `data/*.db-*` were committed because `.gitignore` on this base branch lacked the rules; added rules and `git rm --cached`
+
+### Phase 2 critic
+
+- ✅ Solved: filter API now expressive enough for /sublets to ask for sublease-only listings + lease-window filtering
+- ✅ Benchmark: matches Furnished Finder's "show me sublets that overlap my date window" pattern
+- ⚠️ Looks-but-doesn't-do: `isSublease=false` branch is theoretically usable but no current call site sends it. Documented but untested in real query flow.
+- Assumption: Drizzle's `eq(apartments.isSublease, true)` works on a nullable column. Verified by inspection — `boolean()` columns without `.notNull()` are nullable, and Drizzle handles `eq` against `true` correctly via SQL `IS TRUE`-equivalent.
+
+### Phase 3 — /sublets page (commit 13b18f2)
+
+- New `SubletsPage.tsx`, `subletMockData.ts` (12 hand-curated UofU-area sublets), `MockDataBanner.tsx`
+- Sticky filter sidebar: search / area pills (5 SLC neighbourhoods) / max-rent slider / min-bedrooms / "available through" date / amenity chips / pets-only + parking-only toggles / sort
+- Card design tuned for sublets: source badge, area pill, days-until-end warning when ≤60 d, distance-to-UofU computed via Haversine, "posted by student/host" tag
+- Wired `trpc.apartments.list({ isSublease: true })` with mock fallback when result is empty (mock banner enforced)
+- Route `/sublets` added to App.tsx; Navbar gets `nav.sublets = "Sublets" / "学生转租"`
+- TS error from `for (const a of Set)` fixed with `Array.from(Set).every(...)`
+
+### Phase 3 critic
+
+**Problem solved**: ✅ A user landing on /sublets sees a populated, filterable, sublet-tuned browse experience.
+
+**Benchmark comparison**:
+- vs Furnished Finder: ~55%. We have area filter, date filter, amenity chips. We **lack** photo gallery, host avatar, real-time map, instant booking flow, monthly-availability calendar.
+- vs Airbnb: ~30%. Card design is clean but no photos. No wishlist on /sublets (apartments page has it but the sublet page doesn't reuse it). No reviews / host avatar / messaging.
+- vs Apartments.com: ~50%. We match their filter density. We **lack** map view (deferred to R3), saved searches, neighborhood guides.
+- vs Craigslist: 250%. Our UI annihilates theirs. Their advantage is data freshness — we don't have any real data yet.
+
+**Looks-but-doesn't-do**:
+- "View details" button on card links to `/apartments/${id}` which doesn't exist for mock IDs (`demo-001` etc.). Detail page never renders for mock listings. **Documented**: this is the seam where R3 has to either build a sublet detail page OR teach `ApartmentDetail` to handle mock IDs.
+- "Post a sublet (R3)" button is intentionally disabled. Honest CTA — not a fake input.
+- Source badges show "Demo" red — clearly distinguished. Real listings would show WeChat / Reddit / Craigslist with different tone.
+- Mock data has hard-coded distance values; the Haversine helper computes them at module load. Verified the math (UofU at 40.7649,-111.8421; demo-002 at 40.725,-111.854 → dist ≈ 3.1 mi, plausible).
+- The `availableThrough` filter is implemented as "lease end ≥ this date". A user might expect it to also enforce "available_from ≤ this date" — i.e. "I want to live here on April 15". Filed as R3 nuance, not a bug today.
+
+**Assumption risks**:
+- `trpc.apartments.list({ isSublease: true })` returning empty array when DB empty is reasonable but not battle-tested in this branch. If it errors instead, page would show error state from React Query. The fallback path then never runs. **Risk: medium**, would benefit from one integration test that asserts mock fallback engages on empty backend.
+- Mock data's lat/lon are hand-set; one row had a typo (resolved before commit) that I caught. No automated check protects against future typos.
+
+**Bilingual coverage**:
+- All filter labels, sort options, card CTAs, hero copy — all bilingual ✓
+- Mock data title/description has `titleZh/descriptionZh` for some rows but not all; non-bilingual rows fall back to English in zh-mode. **Acceptable for demo data**; real listings should require zh by Wayne.
+
+**Not in scope but flagged for R3**:
+- Photo gallery (P0 next round)
+- Map view of /sublets (currently only /apartments has Map component)
+- "Save sublet" wishlist parity with /apartments
+- Listing detail page for sublet IDs
+
+### Phase 3 done. Proceeding to Phase 4 (HomePage narrative pivot).
