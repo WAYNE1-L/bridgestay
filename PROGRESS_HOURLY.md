@@ -200,3 +200,50 @@ This approach:
 - Listing detail page for sublet IDs
 
 ### Phase 3 done. Proceeding to Phase 4 (HomePage narrative pivot).
+
+---
+
+## Hour 4 — Phase 4 + Phase 5 + Phase 6 (round close-out)
+
+### Phase 4 — HomePage narrative pivot (commit c1e73c6)
+
+- `translations.ts` `hero.subheadline` rewritten to lead with sublet language while preserving "no SSN, no credit history" trust signals
+- New "Sublet Pivot Strip" section between hero and university trust signals: orange gradient ribbon, GraduationCap icon, "NEW" badge, primary CTA → `/sublets` (uses existing `setLocation` from wouter)
+- Existing hero animation, ApprovalCard, font-handling untouched
+- 34/34 tests still green; vite client build green
+
+### Phase 4 critic
+
+**Solved**: ✅ A user landing on `/` reads sublet language in the subheadline AND sees a clear orange CTA driving to `/sublets`.
+
+**Benchmarks**:
+- Furnished Finder homepage leads with "Find a furnished monthly rental" + state map. We now lead with sublet copy + neighbourhood list. ~70% pattern match.
+- Airbnb homepage UX is image-led; ours is text-led. Difference is intentional and bilingual-friendly. ~50%.
+- Apartments.com homepage is search-first. We have search bar (existing) + sublet strip below it. ~80% — feels more focused than apartments.com's broad rental landing.
+
+**Looks-but-doesn't-do**: nothing material. The strip's `Browse sublets` button works, the CTA is honest.
+
+**Assumption risk**: The strip is between hero and university trust signals. If the existing layout has stylistic dependencies (e.g. the trust section assumes it's directly under hero), the new section could break visual rhythm. Verified by inspection — both sections stand alone with full-width backgrounds, no rhythm dependency. **Low risk**.
+
+### Phase 5 — Round-end critic + FINAL_REPORT.md (this commit)
+
+Wrote 200-line FINAL_REPORT covering:
+- Stats (8 commits, +1442/-3 lines, 34/34 tests)
+- Phase-by-phase results
+- Round-end critic (5 sections: mandate coverage, benchmark alignment, looks-but-doesnt list, UX simulation, R4 roadmap)
+- Files changed table
+- Self-evaluation (cleanest deliveries, tightest boundary, would-do-differently, core promise kept)
+
+### Phase 6 — NEXT_PROMPT.md authored (this commit)
+
+R3 seed written: closes the listing loop with detail page + photo gallery + post-a-sublet form. Documented:
+- Phase structure (0/0.5/1/2/3/4/5/6)
+- Three risky assumption candidates for R3's audit phase
+- File-level allow-list (R2 plus storage.ts + apartments.create extension)
+- Self-stop conditions reused from R2
+
+### Decision to stop
+
+Self-Stop #6 fires (top-3 + close-out done in well under 8h, no R4 work invented). Stopping per spec.
+
+**Hours elapsed: ~4 / 8** — finished early because the Phase 1 audit revealed pre-existing schema support for sublets and saved roughly 4 hours of duplicate work.
