@@ -1,3 +1,27 @@
+/**
+ * SubleasePage — Airbnb arbitrage profit calculator.
+ *
+ * Use case: lease a property from an owner long-term, sublet on Airbnb
+ * short-term, calculate monthly net profit, payback, and ROI. Compare
+ * 2–3 properties side by side.
+ *
+ * Layout (top → bottom):
+ *   1. Header                  — title + horizon select + Try-example + Reset-all
+ *   2. Portfolio summary       — 4 KPI cards (monthly net, setup, payback, period net)
+ *   3. Property comparison     — side-by-side metric table (renders only with 2+ properties)
+ *   4. Sensitivity chart       — occupancy 40–90% sweep, line per property + total
+ *   5. Cashflow waterfall      — bars + cumulative line over the analysis horizon
+ *   6. PropertyCard list       — collapsible cards, essential fields + Advanced
+ *   7. Add-property / Try-example buttons
+ *
+ * Data flow: a single `PortfolioInputs` state object holds the array of
+ * properties + the horizon. Pure derivation via `calculatePortfolio`. State
+ * persists to localStorage under `sublease-portfolio-v2`.
+ *
+ * Single-file decision: kept as one ~1000-line file rather than splitting
+ * into per-component files. Pass A trade-off study; locality of edits >
+ * file-count tidiness for a single-page calculator.
+ */
 import { useState, useEffect, useMemo, useRef } from "react";
 import {
   Bed,
