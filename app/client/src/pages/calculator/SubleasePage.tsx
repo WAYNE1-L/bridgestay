@@ -190,7 +190,9 @@ export default function SubleasePage() {
   const updateProperty = (id: string, updated: PropertyInputs) => {
     setPortfolio((prev) => ({
       ...prev,
-      properties: prev.properties.map((p) => (p.id === id ? updated : p)),
+      properties: prev.properties.map((property) =>
+        property.id === id ? updated : property
+      ),
     }));
   };
 
@@ -203,7 +205,7 @@ export default function SubleasePage() {
 
   const removeProperty = (id: string) => {
     setPortfolio((prev) => {
-      const remaining = prev.properties.filter((p) => p.id !== id);
+      const remaining = prev.properties.filter((property) => property.id !== id);
       return {
         ...prev,
         properties: remaining.length === 0 ? [makeEmptyProperty()] : remaining,
@@ -257,14 +259,14 @@ export default function SubleasePage() {
         />
 
         <div className="space-y-4">
-          {portfolio.properties.map((p, idx) => (
+          {portfolio.properties.map((property, idx) => (
             <PropertyCard
-              key={p.id}
-              property={p}
+              key={property.id}
+              property={property}
               outputs={portfolioOutputs.perProperty[idx]}
               canRemove={portfolio.properties.length > 1}
-              onChange={(updated) => updateProperty(p.id, updated)}
-              onRemove={() => removeProperty(p.id)}
+              onChange={(updated) => updateProperty(property.id, updated)}
+              onRemove={() => removeProperty(property.id)}
             />
           ))}
         </div>
@@ -486,9 +488,9 @@ function PortfolioComparison({
             <thead>
               <tr className="border-b">
                 <th className="text-left py-2 pr-4 font-medium text-muted-foreground">Metric</th>
-                {properties.map((p, i) => (
-                  <th key={p.id} className="text-right py-2 px-3 font-medium">
-                    {p.nickname || `Property ${i + 1}`}
+                {properties.map((property, idx) => (
+                  <th key={property.id} className="text-right py-2 px-3 font-medium">
+                    {property.nickname || `Property ${idx + 1}`}
                   </th>
                 ))}
               </tr>
@@ -524,13 +526,15 @@ function SensitivityChart({ properties }: { properties: PropertyInputs[] }) {
   const data = useMemo(() => {
     const rows: Array<Record<string, number>> = [];
     for (let occ = 40; occ <= 90; occ += 5) {
-      const sweep = properties.map((p) => calculateProperty({ ...p, occupancyRate: occ }));
+      const sweep = properties.map((property) =>
+        calculateProperty({ ...property, occupancyRate: occ })
+      );
       const row: Record<string, number> = { occupancy: occ };
       let total = 0;
-      sweep.forEach((r, i) => {
-        const key = properties[i].nickname || `Property ${i + 1}`;
-        row[key] = Math.round(r.monthlyNetProfit);
-        total += r.monthlyNetProfit;
+      sweep.forEach((result, idx) => {
+        const key = properties[idx].nickname || `Property ${idx + 1}`;
+        row[key] = Math.round(result.monthlyNetProfit);
+        total += result.monthlyNetProfit;
       });
       row["Total"] = Math.round(total);
       rows.push(row);
@@ -563,12 +567,12 @@ function SensitivityChart({ properties }: { properties: PropertyInputs[] }) {
               />
               <ReferenceLine y={0} stroke="#9ca3af" strokeDasharray="2 2" />
               <Legend wrapperStyle={{ fontSize: 12 }} />
-              {properties.map((p, i) => (
+              {properties.map((property, idx) => (
                 <Line
-                  key={p.id}
+                  key={property.id}
                   type="monotone"
-                  dataKey={p.nickname || `Property ${i + 1}`}
-                  stroke={SERIES_COLORS[i % SERIES_COLORS.length]}
+                  dataKey={property.nickname || `Property ${idx + 1}`}
+                  stroke={SERIES_COLORS[idx % SERIES_COLORS.length]}
                   strokeWidth={1.5}
                   dot={false}
                 />
