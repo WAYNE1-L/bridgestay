@@ -524,7 +524,7 @@ function PortfolioComparison({
                 <tr key={row.label} className="border-b last:border-0">
                   <td className="py-2 pr-4 text-muted-foreground">
                     {row.label}
-                    <span className="text-xs text-muted-foreground/70 ml-2">{row.labelZh}</span>
+                    <span className="text-xs text-muted-foreground/85 ml-2">{row.labelZh}</span>
                   </td>
                   {outputs.map((o, i) => (
                     <td
@@ -1176,7 +1176,7 @@ function NumField({
           </span>
         )}
       </div>
-      {hint && <p className="text-xs text-muted-foreground/80">{hint}</p>}
+      {hint && <p className="text-xs text-muted-foreground">{hint}</p>}
     </div>
   );
 }
