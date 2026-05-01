@@ -487,7 +487,9 @@ function PortfolioComparison({
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b">
-                <th className="text-left py-2 pr-4 font-medium text-muted-foreground">Metric</th>
+                <th className="text-left py-2 pr-4 font-medium text-muted-foreground">
+                  Metric / 指标
+                </th>
                 {properties.map((property, idx) => (
                   <th key={property.id} className="text-right py-2 px-3 font-medium">
                     {property.nickname || `Property ${idx + 1}`}
@@ -549,7 +551,8 @@ function SensitivityChart({ properties }: { properties: PropertyInputs[] }) {
           Sensitivity to occupancy / 占用率敏感度
         </h2>
         <p className="text-xs text-muted-foreground mb-3">
-          Monthly net profit across a 40–90% occupancy sweep. Bold black line = portfolio total.
+          Monthly net profit across a 40–90% occupancy sweep. Bold black line = portfolio total. /
+          月净利润随占用率 40–90% 变化。粗黑线 = 投资组合合计。
         </p>
         <div className="h-72">
           <ResponsiveContainer width="100%" height="100%">
@@ -621,7 +624,8 @@ function CashflowWaterfall({
           Cash flow over {horizon} months / {horizon} 个月现金流
         </h2>
         <p className="text-xs text-muted-foreground mb-3">
-          Bars = monthly cashflow (green positive, red negative). Line = cumulative.
+          Bars = monthly cashflow (green positive, red negative). Line = cumulative. /
+          柱状 = 当月现金流(正绿负红),折线 = 累计。
         </p>
         <div className="h-72">
           <ResponsiveContainer width="100%" height="100%">
