@@ -84,19 +84,34 @@ const SERIES_COLORS = [
 
 // ─── Formatters ──────────────────────────────────────────────────────────────
 
+const usdFull = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  maximumFractionDigits: 0,
+  // currencySign defaults to "standard" → -$500 (not "($500)")
+});
+
+const usdCompact = new Intl.NumberFormat("en-US", {
+  style: "currency",
+  currency: "USD",
+  notation: "compact",
+  maximumFractionDigits: 1,
+});
+
 function fmtMoney(n: number): string {
   if (!Number.isFinite(n)) return "—";
-  return new Intl.NumberFormat("en-US", {
-    style: "currency",
-    currency: "USD",
-    maximumFractionDigits: 0,
-  }).format(n);
+  // Switch to compact ($1.2M / $250K) when |n| >= 100,000 to keep KPI cards
+  // legible on small viewports. Below that, full precision is fine.
+  if (Math.abs(n) >= 100_000) return usdCompact.format(n);
+  return usdFull.format(n);
 }
 
 function fmtPayback(n: number): string {
   if (!Number.isFinite(n)) return "∞";
   if (n === 0) return "Immediate";
-  return `${n.toFixed(1)} mo`;
+  // Hide trailing .0 for clean integer-month values: "12 mo" not "12.0 mo".
+  const rounded = Math.round(n * 10) / 10;
+  return Number.isInteger(rounded) ? `${rounded} mo` : `${rounded.toFixed(1)} mo`;
 }
 
 function fmtPct(n: number): string {
