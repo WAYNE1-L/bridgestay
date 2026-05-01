@@ -70,19 +70,31 @@ function NumField({
   suffix?: string;
   hint?: string;
 }) {
+  // Display empty string for 0 so the placeholder shows; this prevents the
+  // "0150" prefix-residue users see when they type into a value="0" field.
+  // Non-zero defaults (e.g. vacancyRate=5, cleaning=50) still render normally.
+  const displayValue = !Number.isFinite(value) || value === 0 ? "" : value;
+
   return (
     <div className="space-y-1.5">
       <Label className="text-sm">{label}</Label>
       <div className="relative">
         <Input
           type="number"
+          inputMode="decimal"
           step={step}
-          value={Number.isFinite(value) ? value : 0}
+          value={displayValue}
+          placeholder="0"
           onChange={(e) => {
-            const v = parseFloat(e.target.value);
+            const raw = e.target.value;
+            if (raw === "") {
+              onChange(0);
+              return;
+            }
+            const v = parseFloat(raw);
             onChange(Number.isFinite(v) ? v : 0);
           }}
-          className={suffix ? "pr-12 no-spinner" : "no-spinner"}
+          className={suffix ? "pr-12 no-spinner tabular-nums" : "no-spinner tabular-nums"}
         />
         {suffix && (
           <span className="absolute right-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground pointer-events-none">
@@ -170,7 +182,7 @@ export default function SubleasePage() {
   return (
     <>
       <Navbar />
-      <main className="container pt-32 pb-16 space-y-6">
+      <main className="container pt-32 pb-16 space-y-6 font-sans tabular-nums">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">

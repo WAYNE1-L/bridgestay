@@ -368,6 +368,15 @@ input, textarea, select {
   letter-spacing: -0.01em;
 }
 
+/* Tabular numerics: align digits in number inputs and elements opting in
+   via the Tailwind `tabular-nums` utility. Prevents "1,234" + "5,678"
+   appearing visually unaligned in calculator KPI cards / cashflow tables. */
+input[type="number"],
+.tabular-nums {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
 /* Smooth transitions */
 *, *::before, *::after {
   transition-property: background-color, border-color, color, fill, stroke, box-shadow, transform;
