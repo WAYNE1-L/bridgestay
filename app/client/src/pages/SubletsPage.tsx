@@ -39,12 +39,15 @@ import {
   type MockSublet,
   type SubletArea,
 } from "@/lib/subletMockData";
+import { ContactHostModal } from "@/components/ContactHostModal";
+import { SubletMapView } from "@/components/SubletMapView";
 import {
   Bed,
   Bath,
   CalendarDays,
   GraduationCap,
   MapPin,
+  Phone,
   Search,
   Sparkles,
   X,
@@ -105,6 +108,8 @@ function daysUntil(iso: string): number {
 export default function SubletsPage() {
   const { language } = useLanguage();
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
+  const [contactSublet, setContactSublet] = useState<MockSublet | null>(null);
+  const [view, setView] = useState<"list" | "map">("list");
 
   // Try the real backend first. We don't actually rely on it returning rows
   // in R2 — the dev DB is empty of sublets — but wiring it up here means the
@@ -202,6 +207,13 @@ export default function SubletsPage() {
   return (
     <div className="min-h-screen bg-neutral-50">
       <Navbar />
+      {contactSublet && (
+        <ContactHostModal
+          sublet={contactSublet}
+          open={!!contactSublet}
+          onClose={() => setContactSublet(null)}
+        />
+      )}
       <main className="container pt-28 pb-16 space-y-6">
         {/* Hero */}
         <header className="space-y-3">
@@ -227,6 +239,32 @@ export default function SubletsPage() {
 
         {/* Mock data banner — site-wide rule */}
         {usingMock && <MockDataBanner source="curated UofU-area examples" />}
+
+        {/* List / Map view toggle */}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setView("list")}
+            className={
+              view === "list"
+                ? "rounded-full px-3 py-1 text-xs font-medium bg-orange-500 text-white shadow-sm"
+                : "rounded-full px-3 py-1 text-xs font-medium bg-white text-neutral-700 border border-neutral-200 hover:border-neutral-400 transition-colors"
+            }
+          >
+            {language === "cn" ? "列表" : "List view"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setView("map")}
+            className={
+              view === "map"
+                ? "rounded-full px-3 py-1 text-xs font-medium bg-orange-500 text-white shadow-sm"
+                : "rounded-full px-3 py-1 text-xs font-medium bg-white text-neutral-700 border border-neutral-200 hover:border-neutral-400 transition-colors"
+            }
+          >
+            {language === "cn" ? "地图" : "Map view"}
+          </button>
+        </div>
 
         <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-6">
           {/* Filter sidebar */}
@@ -454,7 +492,9 @@ export default function SubletsPage() {
               </Select>
             </div>
 
-            {filtered.length === 0 ? (
+            {view === "map" ? (
+              <SubletMapView sublets={filtered} />
+            ) : filtered.length === 0 ? (
               <Card className="border-dashed">
                 <CardContent className="p-10 text-center text-neutral-500 space-y-2">
                   <p className="text-base font-medium text-neutral-700">
@@ -473,7 +513,12 @@ export default function SubletsPage() {
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {filtered.map((sublet) => (
-                  <SubletCard key={sublet.id} sublet={sublet} language={language} />
+                  <SubletCard
+                    key={sublet.id}
+                    sublet={sublet}
+                    language={language}
+                    onContactHost={setContactSublet}
+                  />
                 ))}
               </div>
             )}
@@ -484,7 +529,15 @@ export default function SubletsPage() {
   );
 }
 
-function SubletCard({ sublet, language }: { sublet: MockSublet; language: "en" | "cn" }) {
+function SubletCard({
+  sublet,
+  language,
+  onContactHost,
+}: {
+  sublet: MockSublet;
+  language: "en" | "cn";
+  onContactHost: (sublet: MockSublet) => void;
+}) {
   const days = daysUntil(sublet.subleaseEndDate);
   const sourceMeta = SUBLET_SOURCES[sublet.source];
   const areaMeta = SUBLET_AREAS.find((a) => a.id === sublet.area);
@@ -608,11 +661,21 @@ function SubletCard({ sublet, language }: { sublet: MockSublet; language: "en" |
                 ? "房东发布"
                 : "Posted by host"}
           </span>
-          <Link href={`/sublets/${sublet.id}`}>
-            <Button size="sm" variant="outline">
-              {language === "cn" ? "查看详情" : "View details"}
+          <div className="flex items-center gap-2">
+            <Button
+              size="sm"
+              variant="default"
+              onClick={() => onContactHost(sublet)}
+            >
+              <Phone className="w-3.5 h-3.5 mr-1.5" />
+              {language === "cn" ? "联系房东" : "Contact host"}
             </Button>
-          </Link>
+            <Link href={`/sublets/${sublet.id}`}>
+              <Button size="sm" variant="outline">
+                {language === "cn" ? "查看详情" : "View details"}
+              </Button>
+            </Link>
+          </div>
         </div>
       </CardContent>
     </Card>
@@ -678,6 +741,7 @@ function adaptApartmentToSublet(row: Record<string, unknown>): MockSublet {
     distanceToUofU: 0,
     source: "manual_other",
     wechatContact: typeof row.wechatContact === "string" ? row.wechatContact : undefined,
+    contact: { primary: "email" as const, email: "contact@bridgestay.local" },
     description: str("description"),
     hostIsStudent: false,
   };

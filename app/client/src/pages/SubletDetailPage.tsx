@@ -10,6 +10,7 @@
 
 import { Navbar } from "@/components/Navbar";
 import { MockDataBanner } from "@/components/MockDataBanner";
+import { ContactHostModal } from "@/components/ContactHostModal";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -32,6 +33,7 @@ import {
   MapPin,
   PawPrint,
   ParkingCircle,
+  Phone,
   Square,
   Users,
 } from "lucide-react";
@@ -187,10 +189,16 @@ function SubletFound({ sublet }: { sublet: MockSublet }) {
   const { language } = useLanguage();
   const sourceMeta = SUBLET_SOURCES[sublet.source];
   const areaMeta = SUBLET_AREAS.find((a) => a.id === sublet.area);
+  const [contactOpen, setContactOpen] = useState(false);
 
   return (
     <div className="min-h-screen bg-neutral-50">
       <Navbar />
+      <ContactHostModal
+        sublet={sublet}
+        open={contactOpen}
+        onClose={() => setContactOpen(false)}
+      />
       <main className="container pt-28 pb-16 space-y-6 max-w-4xl">
         {/* Back link */}
         <Link href="/sublets">
@@ -240,6 +248,17 @@ function SubletFound({ sublet }: { sublet: MockSublet }) {
               <span className="ml-3 text-xs text-neutral-500">
                 {language === "cn" ? "押金" : "Deposit"}: {fmtUsd(sublet.securityDeposit)}
               </span>
+            </div>
+
+            <div className="pt-2">
+              <Button
+                variant="default"
+                onClick={() => setContactOpen(true)}
+                className="w-full sm:w-auto"
+              >
+                <Phone className="w-4 h-4 mr-2" />
+                {language === "cn" ? "联系房东" : "Contact host"}
+              </Button>
             </div>
           </CardContent>
         </Card>

@@ -42,6 +42,14 @@ export type SubletSource =
   | "reddit"
   | "facebook";
 
+export interface MockSubletContact {
+  primary: "wechat" | "email" | "craigslist_link" | "reddit_link" | "xhs";
+  wechatId?: string;
+  xhsUsername?: string;
+  email?: string;
+  originalUrl?: string;
+}
+
 export interface MockSublet {
   id: string;
   /** Title shown on the card */
@@ -75,6 +83,8 @@ export interface MockSublet {
   source: SubletSource;
   /** Hosts contact via WeChat for the Chinese-language audience. */
   wechatContact?: string;
+  /** Structured contact info for the ContactHostModal. */
+  contact: MockSubletContact;
   /** Brief description, bilingual. */
   description: string;
   descriptionZh?: string;
@@ -129,6 +139,7 @@ export const MOCK_SUBLETS: MockSublet[] = [
     nearbyUniversities: ["University of Utah"],
     source: "manual_demo",
     wechatContact: "wayne_demo_001",
+    contact: { primary: "wechat", wechatId: "wayne_demo_001" },
     description: "Walking distance to campus, great for summer term student. Furnished, utilities included.",
     descriptionZh: "步行 5 分钟到校园,夏季学期完美选择。家具齐全,水电网包。",
     hostIsStudent: true,
@@ -156,6 +167,7 @@ export const MOCK_SUBLETS: MockSublet[] = [
     parkingIncluded: true,
     nearbyUniversities: ["University of Utah", "Westminster"],
     source: "manual_demo",
+    contact: { primary: "wechat", wechatId: "SLC_demo_002" },
     description: "Quiet 1BR with parking and gym. Lease ends end of July, summer-only sublet.",
     hostIsStudent: false,
   }),
@@ -183,6 +195,7 @@ export const MOCK_SUBLETS: MockSublet[] = [
     nearbyUniversities: ["University of Utah"],
     source: "manual_demo",
     wechatContact: "uofu_phd_demo",
+    contact: { primary: "wechat", wechatId: "uofu_phd_demo" },
     description: "Private bedroom in 4BR house. Three current PhD roommates. International friendly.",
     descriptionZh: "四居室合租独立卧室。三位博士室友,留学生友好。",
     hostIsStudent: true,
@@ -210,6 +223,7 @@ export const MOCK_SUBLETS: MockSublet[] = [
     parkingIncluded: true,
     nearbyUniversities: ["University of Utah"],
     source: "manual_demo",
+    contact: { primary: "wechat", wechatId: "SLC_demo_004" },
     description: "Modern studio downtown. 15 min by car to UofU. Walking distance to TRAX.",
     hostIsStudent: false,
   }),
@@ -236,6 +250,7 @@ export const MOCK_SUBLETS: MockSublet[] = [
     parkingIncluded: true,
     nearbyUniversities: ["University of Utah"],
     source: "manual_demo",
+    contact: { primary: "wechat", wechatId: "SLC_demo_005" },
     description: "Roomy 2BR in quiet Federal Heights. Great for two grad students sharing.",
     hostIsStudent: true,
   }),
@@ -262,6 +277,7 @@ export const MOCK_SUBLETS: MockSublet[] = [
     parkingIncluded: true,
     nearbyUniversities: ["University of Utah"],
     source: "manual_demo",
+    contact: { primary: "wechat", wechatId: "SLC_demo_006" },
     description: "Mountain-view 1BR. Hiking out the back door. 10-min drive to campus.",
     hostIsStudent: false,
   }),
@@ -289,6 +305,7 @@ export const MOCK_SUBLETS: MockSublet[] = [
     nearbyUniversities: ["University of Utah", "SLCC"],
     source: "manual_demo",
     wechatContact: "trax_studio",
+    contact: { primary: "wechat", wechatId: "trax_studio" },
     description: "Cheap studio near TRAX red line. Direct ride to UofU. No car needed.",
     hostIsStudent: true,
   }),
@@ -315,6 +332,7 @@ export const MOCK_SUBLETS: MockSublet[] = [
     parkingIncluded: true,
     nearbyUniversities: ["University of Utah", "Westminster"],
     source: "manual_demo",
+    contact: { primary: "wechat", wechatId: "SLC_demo_008" },
     description: "Two-bedroom in Sugar House. Pet-friendly, fenced yard. Summer-only.",
     hostIsStudent: false,
   }),
@@ -342,6 +360,7 @@ export const MOCK_SUBLETS: MockSublet[] = [
     nearbyUniversities: ["University of Utah"],
     source: "manual_demo",
     wechatContact: "uofu_demo_shared",
+    contact: { primary: "wechat", wechatId: "uofu_demo_shared" },
     description: "Private room in all-female student house. Two-block walk to Union building.",
     descriptionZh: "全女生学生合租房独立卧室。走到 Union 两个街区。",
     hostIsStudent: true,
@@ -369,6 +388,7 @@ export const MOCK_SUBLETS: MockSublet[] = [
     parkingIncluded: true,
     nearbyUniversities: ["University of Utah"],
     source: "manual_demo",
+    contact: { primary: "wechat", wechatId: "SLC_demo_010" },
     description: "Modern furnished condo, 15 min TRAX ride to campus.",
     hostIsStudent: false,
   }),
@@ -395,6 +415,7 @@ export const MOCK_SUBLETS: MockSublet[] = [
     parkingIncluded: false,
     nearbyUniversities: ["University of Utah", "Westminster"],
     source: "manual_demo",
+    contact: { primary: "wechat", wechatId: "SLC_demo_011" },
     description: "Tight budget? Compact studio. Two-month sublet only.",
     hostIsStudent: true,
   }),
@@ -421,6 +442,7 @@ export const MOCK_SUBLETS: MockSublet[] = [
     parkingIncluded: true,
     nearbyUniversities: ["University of Utah"],
     source: "manual_demo",
+    contact: { primary: "wechat", wechatId: "SLC_demo_012" },
     description: "Whole 3BR house. Three roommates leaving for summer. Take all three or split.",
     hostIsStudent: true,
   }),

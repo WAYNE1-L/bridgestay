@@ -1,3 +1,4 @@
+import "leaflet/dist/leaflet.css";
 import { initAnalytics } from "@/lib/analytics";
 import { trpc } from "@/lib/trpc";
 import { UNAUTHED_ERR_MSG } from '@shared/const';
