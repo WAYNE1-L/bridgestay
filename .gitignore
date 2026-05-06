@@ -135,3 +135,8 @@ tools/lehi-scraper/data/*.db-wal
 tools/lehi-scraper/data/debug/
 tools/lehi-scraper/public/
 tools/lehi-scraper/node_modules/
+
+# never commit env files
+.env
+.env.*
+!.env.example

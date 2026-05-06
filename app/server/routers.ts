@@ -1264,6 +1264,22 @@ If nothing new can be extracted, return {"chatSummary": "聊天记录中未发�
       }),
   }),
 
+  // ============ SUBLET LISTING PARSER ============
+  sublets: router({
+    /**
+     * Parse a free-text sublet listing (Chinese or English) into a structured shape
+     * suitable for prefilling the /sublets/post form.
+     *
+     * TODO(R5): require auth in production. R4 is gated by DEV_DEMO_MODE only.
+     */
+    parseFromText: publicProcedure
+      .input(z.object({ text: z.string().min(20).max(20000) }))
+      .mutation(async ({ input }) => {
+        const { parseSubletText } = await import("./sublets-parser");
+        return await parseSubletText(input.text);
+      }),
+  }),
+
   // ============ PROMOTIONS ============
   promotions: router({
     create: protectedProcedure

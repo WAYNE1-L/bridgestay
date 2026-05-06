@@ -12,6 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent } from "@/components/ui/card";
+import { Textarea } from "@/components/ui/textarea";
 import {
   Select,
   SelectContent,
@@ -22,6 +23,9 @@ import {
 import { SUBLET_SOURCES } from "@/lib/subletMockData";
 import { useState } from "react";
 import { useLocation } from "wouter";
+import { Sparkles, Loader2 } from "lucide-react";
+import { trpc } from "@/lib/trpc";
+import { toast } from "sonner";
 
 type SubletSourceKey = "manual_other" | "manual_wechat" | "manual_xhs" | "craigslist" | "reddit";
 
@@ -59,11 +63,18 @@ const EMPTY_FORM: FormState = {
   source: "",
 };
 
+const PASTE_PLACEHOLDER =
+  `[Craigslist example]\n3BR/1BA near University of Utah – $1,150/mo\n180 S 1300 E, Apt 3, Salt Lake City, UT 84102\nAvail Aug 1 – Dec 20, 2026. 680 sqft. Quiet building.\nContact: craigslist.org/post/12345\n\n---\n\n[微信群转租]\n盐湖城大学区转租，2室1卫，820平方英尺\n月租$1,050，8月15日入住，转租至2027年1月15日\n地址：220 S Mario Capecchi Dr, SLC UT 84132\n微信联系：bridgestay2026`;
+
 export default function PostSubletPage() {
   const { language } = useLanguage();
   const [, setLocation] = useLocation();
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
+  const [mode, setMode] = useState<"manual" | "paste">("manual");
+  const [pasteText, setPasteText] = useState("");
+
+  const parseFromText = trpc.sublets.parseFromText.useMutation();
 
   const isCn = language === "cn";
 
@@ -110,6 +121,49 @@ export default function PostSubletPage() {
     setLocation("/sublets");
   }
 
+  async function handleExtract() {
+    try {
+      const result = await parseFromText.mutateAsync({ text: pasteText.trim() });
+      if (result.ok) {
+        const p = result.parsed;
+        setForm((prev) => ({
+          ...prev,
+          title: p.titleEn ?? prev.title,
+          titleZh: p.titleZh ?? prev.titleZh,
+          monthlyRent: p.monthlyRent != null ? String(p.monthlyRent) : prev.monthlyRent,
+          address: p.address ?? prev.address,
+          bedrooms: p.bedrooms != null ? String(p.bedrooms) : prev.bedrooms,
+          bathrooms: p.bathrooms != null ? String(p.bathrooms) : prev.bathrooms,
+          squareFeet: p.squareFeet != null ? String(p.squareFeet) : prev.squareFeet,
+          availableFrom: p.availableFrom ?? prev.availableFrom,
+          subleaseEndDate: p.subleaseEndDate ?? prev.subleaseEndDate,
+          source: p.sourceHint ?? prev.source,
+        }));
+        setMode("manual");
+        toast.success(
+          isCn
+            ? "已自动填表，请检查 / Form auto-filled — please review"
+            : "Form auto-filled — please review / 已自动填表，请检查"
+        );
+      } else {
+        const errMsg = result.error || (isCn ? "未知错误" : "unknown");
+        toast.error(
+          isCn
+            ? `提取失败：${errMsg} / Extraction failed: ${errMsg}`
+            : `Extraction failed: ${errMsg} / 提取失败：${errMsg}`
+        );
+      }
+    } catch (err: unknown) {
+      const errMsg =
+        err instanceof Error ? err.message : isCn ? "未知错误" : "unknown";
+      toast.error(
+        isCn
+          ? `提取失败：${errMsg} / Extraction failed: ${errMsg}`
+          : `Extraction failed: ${errMsg} / 提取失败：${errMsg}`
+      );
+    }
+  }
+
   return (
     <div className="min-h-screen bg-neutral-50">
       <Navbar />
@@ -128,6 +182,72 @@ export default function PostSubletPage() {
           </p>
         </div>
 
+        {/* Mode toggle */}
+        <div className="flex gap-2">
+          <button
+            type="button"
+            onClick={() => setMode("manual")}
+            className={
+              mode === "manual"
+                ? "rounded-full px-4 py-1.5 text-sm font-medium bg-orange-500 text-white shadow-sm transition-colors"
+                : "rounded-full px-4 py-1.5 text-sm font-medium bg-white text-neutral-700 border border-neutral-200 hover:border-neutral-400 transition-colors"
+            }
+          >
+            {isCn ? "手动填写 / Manual" : "Manual / 手动填写"}
+          </button>
+          <button
+            type="button"
+            onClick={() => setMode("paste")}
+            className={
+              mode === "paste"
+                ? "rounded-full px-4 py-1.5 text-sm font-medium bg-orange-500 text-white shadow-sm transition-colors"
+                : "rounded-full px-4 py-1.5 text-sm font-medium bg-white text-neutral-700 border border-neutral-200 hover:border-neutral-400 transition-colors"
+            }
+          >
+            {isCn ? "从文本粘贴 / Paste from text" : "Paste from text / 从文本粘贴"}
+          </button>
+        </div>
+
+        {/* Paste panel */}
+        {mode === "paste" && (
+          <Card>
+            <CardContent className="p-6 space-y-4">
+              <Textarea
+                rows={8}
+                value={pasteText}
+                onChange={(e) => setPasteText(e.target.value)}
+                placeholder={PASTE_PLACEHOLDER}
+                className="resize-none font-mono text-sm"
+              />
+              <p className="text-xs text-neutral-500">
+                {isCn
+                  ? "AI 会读取文本自动填表 / AI will auto-fill the form below"
+                  : "AI will auto-fill the form below / AI 会读取文本自动填表"}
+              </p>
+              <Button
+                type="button"
+                onClick={handleExtract}
+                disabled={pasteText.trim().length < 20 || parseFromText.isPending}
+                className="w-full"
+              >
+                {parseFromText.isPending ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    {isCn ? "提取中…" : "Extracting…"}
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="mr-2 h-4 w-4" />
+                    {isCn ? "提取 / Extract" : "Extract / 提取"}
+                  </>
+                )}
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Manual form */}
+        {mode === "manual" && (
         <Card>
           <CardContent className="p-6">
             <form onSubmit={handleSubmit} noValidate className="space-y-5">
@@ -338,6 +458,7 @@ export default function PostSubletPage() {
             </form>
           </CardContent>
         </Card>
+        )}
       </main>
     </div>
   );
