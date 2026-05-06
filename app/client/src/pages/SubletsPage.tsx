@@ -402,17 +402,18 @@ export default function SubletsPage() {
                 </p>
                 <p className="text-xs text-orange-700/80">
                   {language === "cn"
-                    ? "发布表单将在 R3 上线。先看看现有房源,或者联系我们。"
-                    : "Posting form coming in R3. Browse existing listings or contact us."}
+                    ? "分享你的空间,帮助有需要的同学。"
+                    : "Share your space with fellow students."}
                 </p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  disabled
-                  className="w-full border-orange-300 text-orange-700"
-                >
-                  {language === "cn" ? "发布转租 (R3)" : "Post a sublet (R3)"}
-                </Button>
+                <Link href="/sublets/post" className="block w-full">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="w-full border-orange-300 text-orange-700 hover:bg-orange-100"
+                  >
+                    {language === "cn" ? "发布转租" : "Post a sublet"}
+                  </Button>
+                </Link>
               </CardContent>
             </Card>
           </aside>
@@ -490,6 +491,18 @@ function SubletCard({ sublet, language }: { sublet: MockSublet; language: "en" |
 
   return (
     <Card className="overflow-hidden hover:shadow-md transition-shadow group">
+      {/* Hero image */}
+      <div className="relative aspect-video w-full overflow-hidden bg-neutral-100">
+        <img
+          src={`https://picsum.photos/seed/${sublet.id}/640/360`}
+          alt={sublet.title}
+          className="w-full h-full object-cover"
+          loading="lazy"
+        />
+        <span className="absolute bottom-2 right-2 bg-red-600/90 text-white text-[10px] px-1.5 py-0.5 rounded">
+          Demo photo
+        </span>
+      </div>
       <CardContent className="p-5 space-y-3">
         {/* Top row: source + area + ending */}
         <div className="flex items-center justify-between text-xs">
@@ -595,7 +608,7 @@ function SubletCard({ sublet, language }: { sublet: MockSublet; language: "en" |
                 ? "房东发布"
                 : "Posted by host"}
           </span>
-          <Link href={`/apartments/${sublet.id}`}>
+          <Link href={`/sublets/${sublet.id}`}>
             <Button size="sm" variant="outline">
               {language === "cn" ? "查看详情" : "View details"}
             </Button>
