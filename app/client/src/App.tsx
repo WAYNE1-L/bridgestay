@@ -10,6 +10,7 @@ import Home from "./pages/Home";
 import Apartments from "./pages/Apartments";
 import ApartmentDetail from "./pages/ApartmentDetail";
 import SubletsPage from "./pages/SubletsPage";
+import SubletDetailPage from "./pages/SubletDetailPage";
 import Dashboard from "./pages/Dashboard";
 import Apply from "./pages/Apply";
 import HowItWorks from "./pages/HowItWorks";
@@ -109,6 +110,7 @@ function Router() {
       <Route path={"/apartments"} component={Apartments} />
       <Route path={"/apartments/:id"} component={ApartmentDetail} />
       <Route path={"/sublets"} component={SubletsPage} />
+      <Route path={"/sublets/:id"} component={SubletDetailPage} />
       <Route path={"/dashboard"} component={Dashboard} />
       <Route path={"/apply/:id"} component={Apply} />
       <Route path={"/how-it-works"} component={HowItWorks} />
