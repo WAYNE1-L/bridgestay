@@ -25,6 +25,7 @@ const translations: Record<string, Record<Language, string>> = {
   "nav.signOut": { cn: "退出登录", en: "Sign Out" },
   "nav.analytics": { cn: "数据分析", en: "Analytics" },
   "nav.calculator": { cn: "计算器", en: "Calculator" },
+  "nav.sublets": { cn: "学生转租", en: "Sublets" },
 
   // Analytics module
   "analytics.title": { cn: "BridgeStay 数据分析", en: "BridgeStay Analytics" },

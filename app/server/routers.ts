@@ -53,6 +53,14 @@ const apartmentFiltersSchema = z.object({
   petsAllowed: z.boolean().optional(),
   parkingIncluded: z.boolean().optional(),
   nearUniversity: z.string().optional(),
+  // Sublet-specific filters (R2 sublet pivot).
+  // Set isSublease=true on the /sublets page, leave undefined on /apartments
+  // so the existing browse experience is unaffected.
+  isSublease: z.boolean().optional(),
+  // ISO date string ("2026-08-15"). When set, only return listings whose
+  // sublease has not ended by this date. Used to filter sublets that span
+  // a desired move-in window.
+  subleaseAvailableThrough: z.string().optional(),
   limit: z.number().default(20),
   offset: z.number().default(0),
 });

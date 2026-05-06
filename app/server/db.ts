@@ -238,6 +238,10 @@ export interface ApartmentFilters {
   nearUniversity?: string;
   status?: string;
   landlordId?: number;
+  // Sublet pivot (R2).
+  isSublease?: boolean;
+  /** ISO date string. Only return listings whose sublease end date is on or after this date. */
+  subleaseAvailableThrough?: string;
 }
 
 export async function getApartments(filters: ApartmentFilters = {}, limit = 20, offset = 0) {
@@ -282,6 +286,25 @@ export async function getApartments(filters: ApartmentFilters = {}, limit = 20, 
   }
   if (filters.landlordId) {
     conditions.push(eq(apartments.landlordId, filters.landlordId));
+  }
+  // Sublet filters: isSublease=true keeps only sublease listings; passing
+  // false intentionally excludes them. Undefined means "no preference" (so
+  // the existing /apartments page sees both sublets and full leases mixed
+  // exactly as before).
+  if (filters.isSublease === true) {
+    conditions.push(eq(apartments.isSublease, true));
+  } else if (filters.isSublease === false) {
+    conditions.push(
+      sql`(${apartments.isSublease} IS NULL OR ${apartments.isSublease} = false)`
+    );
+  }
+  if (filters.subleaseAvailableThrough) {
+    const through = new Date(filters.subleaseAvailableThrough);
+    if (!Number.isNaN(through.getTime())) {
+      conditions.push(
+        sql`(${apartments.subleaseEndDate} IS NULL OR ${apartments.subleaseEndDate} >= ${through})`
+      );
+    }
   }
 
   const result = await db.select()

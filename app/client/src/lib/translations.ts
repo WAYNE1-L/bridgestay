@@ -19,8 +19,8 @@ export const siteContent = {
       cn: "欢迎来到",
     },
     subheadline: {
-      en: "No SSN needed. No credit history required. Join thousands of international students who found their perfect home.",
-      cn: "无需 SSN，无需信用记录。加入数千名留学生的行列，在这里找到你在盐湖城的完美新家。",
+      en: "No SSN needed. No credit history required. Find an SLC sublet directly from a current student — or browse full-lease listings.",
+      cn: "无需 SSN，无需信用记录。从在校学生手里直接转租盐湖城房源,或浏览整租房源。",
     },
     searchPlaceholder: {
       en: "Where are you studying? (e.g., USC, NYU, MIT)",
