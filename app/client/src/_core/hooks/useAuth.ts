@@ -23,6 +23,10 @@ export function useAuth(options?: UseAuthOptions) {
     },
   });
 
+  const signIn = useCallback(() => {
+    window.location.href = "/api/oauth/login";
+  }, []);
+
   const logout = useCallback(async () => {
     try {
       await logoutMutation.mutateAsync();
@@ -79,5 +83,6 @@ export function useAuth(options?: UseAuthOptions) {
     ...state,
     refresh: () => meQuery.refetch(),
     logout,
+    signIn,
   };
 }

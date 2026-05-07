@@ -1279,8 +1279,8 @@ If nothing new can be extracted, return {"chatSummary": "聊天记录中未发�
         return await parseSubletText(input.text);
       }),
 
-    // TODO(R7): switch to protectedProcedure once auth is enforced for sublet posting.
-    create: publicProcedure
+    // Auth-gated: ctx.user is guaranteed non-null by protectedProcedure.
+    create: protectedProcedure
       .input(z.object({
         titleEn: z.string().min(5).max(255),
         titleZh: z.string().optional(),
@@ -1308,33 +1308,11 @@ If nothing new can be extracted, return {"chatSummary": "聊天记录中未发�
         }).optional(),
       }))
       .mutation(async ({ ctx, input }) => {
-        let landlordId: number;
-
-        if (ctx.user) {
-          landlordId = ctx.user.id;
-        } else if (process.env.DEV_DEMO_MODE === "true") {
-          // DEV_DEMO_MODE: find or create a demo user
-          const DEMO_OPEN_ID = "demo-sublet-landlord";
-          let demoUser = await db.getUserByOpenId(DEMO_OPEN_ID);
-          if (!demoUser) {
-            console.warn("[sublets.create] DEV_DEMO_MODE: no demo user found, inserting one");
-            await db.upsertUser({
-              openId: DEMO_OPEN_ID,
-              name: "Demo Sublet Landlord",
-              email: "demo-sublet@bridgestay.dev",
-              loginMethod: "demo",
-              role: "landlord",
-            });
-            demoUser = await db.getUserByOpenId(DEMO_OPEN_ID);
-          }
-          if (!demoUser) {
-            throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Failed to resolve demo user" });
-          }
-          console.warn(`[sublets.create] DEV_DEMO_MODE: using demo landlord id=${demoUser.id}`);
-          landlordId = demoUser.id;
-        } else {
-          throw new TRPCError({ code: "UNAUTHORIZED", message: "Authentication required to post a sublet" });
+        if (ctx.user.role !== "landlord" && ctx.user.role !== "admin") {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Only landlords or admins can post a sublet" });
         }
+
+        const landlordId = ctx.user.id;
 
         const { contact, titleEn, titleZh: _titleZh, source: _source, availableFrom, subleaseEndDate, ...rest } = input;
         const id = await db.createApartment({

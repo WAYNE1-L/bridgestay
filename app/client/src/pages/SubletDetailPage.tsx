@@ -11,6 +11,7 @@
 import { Navbar } from "@/components/Navbar";
 import { MockDataBanner } from "@/components/MockDataBanner";
 import { ContactHostModal } from "@/components/ContactHostModal";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -222,11 +223,13 @@ function SubletGallery({ id }: { id: string }) {
 
 function SubletFound({ sublet, isMock }: { sublet: MockSublet; isMock: boolean }) {
   const { language } = useLanguage();
+  const { user, signIn } = useAuth();
   const sourceMeta = SUBLET_SOURCES[sublet.source];
   const areaMeta = SUBLET_AREAS.find((a) => a.id === sublet.area);
   const [contactOpen, setContactOpen] = useState(false);
 
   const hasContact = isMock || Boolean(sublet.wechatContact);
+  const isSignedIn = Boolean(user);
 
   return (
     <div className="min-h-screen bg-neutral-50">
@@ -290,7 +293,18 @@ function SubletFound({ sublet, isMock }: { sublet: MockSublet; isMock: boolean }
             </div>
 
             <div className="pt-2">
-              {hasContact ? (
+              {!isSignedIn ? (
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-2">
+                  <p className="text-sm text-neutral-500 italic">
+                    {language === "cn"
+                      ? "请登录后查看联系方式"
+                      : "Please sign in to see contact info"}
+                  </p>
+                  <Button variant="default" onClick={signIn} className="bg-orange-500 hover:bg-orange-600 text-white">
+                    {language === "cn" ? "使用 Google 登录" : "Sign in with Google"}
+                  </Button>
+                </div>
+              ) : hasContact ? (
                 <Button
                   variant="default"
                   onClick={() => setContactOpen(true)}

@@ -15,6 +15,7 @@
 
 import { Navbar } from "@/components/Navbar";
 import { MockDataBanner } from "@/components/MockDataBanner";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -108,6 +109,7 @@ function daysUntil(iso: string): number {
 
 export default function SubletsPage() {
   const { language } = useLanguage();
+  const { user, signIn } = useAuth();
   const [filters, setFilters] = useState<FilterState>(DEFAULT_FILTERS);
   const [contactSublet, setContactSublet] = useState<MockSublet | null>(null);
   const [view, setView] = useState<"list" | "map">("list");
@@ -508,6 +510,8 @@ export default function SubletsPage() {
                     sublet={sublet}
                     language={language}
                     onContactHost={setContactSublet}
+                    isSignedIn={Boolean(user)}
+                    onSignIn={signIn}
                   />
                 ))}
               </div>
@@ -523,10 +527,14 @@ function SubletCard({
   sublet,
   language,
   onContactHost,
+  isSignedIn,
+  onSignIn,
 }: {
   sublet: MockSublet;
   language: "en" | "cn";
   onContactHost: (sublet: MockSublet) => void;
+  isSignedIn: boolean;
+  onSignIn: () => void;
 }) {
   const days = daysUntil(sublet.subleaseEndDate);
   const sourceMeta = SUBLET_SOURCES[sublet.source];
@@ -652,7 +660,16 @@ function SubletCard({
                 : "Posted by host"}
           </span>
           <div className="flex items-center gap-2">
-            {sublet.source !== "manual_demo" && !sublet.wechatContact ? (
+            {!isSignedIn ? (
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs text-neutral-400 italic">
+                  {language === "cn" ? "请登录后查看联系方式" : "Please sign in to see contact info"}
+                </span>
+                <Button size="sm" variant="outline" onClick={onSignIn}>
+                  {language === "cn" ? "登录" : "Sign in"}
+                </Button>
+              </div>
+            ) : sublet.source !== "manual_demo" && !sublet.wechatContact ? (
               <span className="text-xs text-neutral-400 italic">
                 {language === "cn"
                   ? "联系方式暂不可用"

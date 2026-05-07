@@ -1,7 +1,15 @@
 import { useAuth } from "@/_core/hooks/useAuth";
 import { Button } from "@/components/ui/button";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { motion, AnimatePresence } from "framer-motion";
-import { Menu, X, Home, Search, FileText, User, LogOut, Globe, Settings, LogIn, Users, BarChart3, Calculator, GraduationCap } from "lucide-react";
+import { Menu, X, Home, Search, FileText, User, LogOut, Globe, Settings, LogIn, Users, BarChart3, Calculator, GraduationCap, List } from "lucide-react";
 import { useState, useEffect } from "react";
 import { Link, useLocation } from "wouter";
 import { BridgeStayLogo } from "./BridgeStayLogo";
@@ -9,11 +17,11 @@ import { NotificationBell } from "./NotificationBell";
 import { useLanguage } from "@/contexts/LanguageContext";
 
 export function Navbar() {
-  const { user, isAuthenticated, logout } = useAuth();
+  const { user, isAuthenticated, logout, signIn } = useAuth();
   const { language, setLanguage, t } = useLanguage();
   const [isScrolled, setIsScrolled] = useState(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
-  const [location] = useLocation();
+  const [location, setLocation] = useLocation();
 
   const isAdmin = user?.role === "admin";
 
@@ -119,29 +127,33 @@ export function Navbar() {
                   </Button>
                 </Link>
               </div>
-            ) : isAuthenticated ? (
-              <div className="flex items-center gap-2">
-                <Link href="/dashboard">
-                  <Button variant="ghost" className="h-11 px-4 rounded-full text-[15px] font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100">
-                    <User className="w-4 h-4 mr-1.5" />
-                    {t("nav.dashboard")}
-                  </Button>
-                </Link>
-                <Button
-                  variant="ghost"
-                  className="h-11 px-4 rounded-full text-[15px] font-medium text-gray-700 hover:text-gray-900 hover:bg-gray-100"
-                  onClick={handleLogout}
-                >
-                  <LogOut className="w-4 h-4 mr-1.5" />
-                  {t("nav.signOut")}
-                </Button>
-              </div>
+            ) : isAuthenticated && user ? (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <button className="rounded-full focus:outline-none focus:ring-2 focus:ring-orange-400 focus:ring-offset-2">
+                    <Avatar className="size-9 cursor-pointer hover:opacity-80 transition-opacity">
+                      <AvatarFallback className="bg-orange-100 text-orange-700 text-sm font-semibold">
+                        {(user.name ?? user.email ?? "U").slice(0, 2).toUpperCase()}
+                      </AvatarFallback>
+                    </Avatar>
+                  </button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-44">
+                  <DropdownMenuItem onClick={() => setLocation("/my-listings")}>
+                    <List className="w-4 h-4 mr-2" />
+                    {language === "cn" ? "我的发布" : "My listings"}
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem onClick={handleLogout}>
+                    <LogOut className="w-4 h-4 mr-2" />
+                    {t("nav.signOut")}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
             ) : (
               <Button
                 className="flex items-center gap-1.5 px-4 py-1.5 rounded-full bg-orange-500 text-white text-sm font-medium hover:bg-orange-600 transition-colors"
-                onClick={() => {
-                  window.location.href = "/api/oauth/login";
-                }}
+                onClick={signIn}
               >
                 <LogIn className="w-4 h-4" />
                 {t("nav.signIn")}
@@ -240,16 +252,30 @@ export function Navbar() {
               
               {isAuthenticated ? (
                 <>
-                  <Link href="/dashboard">
-                    <motion.div
-                      className="flex items-center gap-4 px-5 py-4 rounded-2xl text-[15px] font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100 cursor-pointer"
-                      onClick={() => setIsMobileMenuOpen(false)}
-                      whileTap={{ scale: 0.98 }}
-                    >
-                      <User className="w-5 h-5" />
-                      {t("nav.dashboard")}
-                    </motion.div>
-                  </Link>
+                  {!isAdmin && (
+                    <Link href="/my-listings">
+                      <motion.div
+                        className="flex items-center gap-4 px-5 py-4 rounded-2xl text-[15px] font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100 cursor-pointer"
+                        onClick={() => setIsMobileMenuOpen(false)}
+                        whileTap={{ scale: 0.98 }}
+                      >
+                        <List className="w-5 h-5" />
+                        {language === "cn" ? "我的发布" : "My listings"}
+                      </motion.div>
+                    </Link>
+                  )}
+                  {isAdmin && (
+                    <Link href="/dashboard">
+                      <motion.div
+                        className="flex items-center gap-4 px-5 py-4 rounded-2xl text-[15px] font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100 cursor-pointer"
+                        onClick={() => setIsMobileMenuOpen(false)}
+                        whileTap={{ scale: 0.98 }}
+                      >
+                        <User className="w-5 h-5" />
+                        {t("nav.dashboard")}
+                      </motion.div>
+                    </Link>
+                  )}
                   <motion.div
                     className="flex items-center gap-4 px-5 py-4 rounded-2xl text-[15px] font-medium text-gray-600 hover:text-gray-900 hover:bg-gray-100 cursor-pointer"
                     onClick={() => {
@@ -267,7 +293,7 @@ export function Navbar() {
                   className="flex items-center gap-4 px-5 py-4 rounded-2xl bg-orange-500 text-[15px] font-medium text-white hover:bg-orange-600 cursor-pointer transition-colors"
                   onClick={() => {
                     setIsMobileMenuOpen(false);
-                    window.location.href = "/api/oauth/login";
+                    signIn();
                   }}
                   whileTap={{ scale: 0.98 }}
                 >

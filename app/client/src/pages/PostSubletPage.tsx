@@ -7,6 +7,7 @@
 
 import { Navbar } from "@/components/Navbar";
 import { MockDataBanner } from "@/components/MockDataBanner";
+import { useAuth } from "@/_core/hooks/useAuth";
 import { useLanguage } from "@/contexts/LanguageContext";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -74,7 +75,9 @@ const PASTE_PLACEHOLDER =
 
 export default function PostSubletPage() {
   const { language } = useLanguage();
+  const { user, loading: authLoading, signIn } = useAuth();
   const [, setLocation] = useLocation();
+  const isCn = language === "cn";
   const [form, setForm] = useState<FormState>(EMPTY_FORM);
   const [errors, setErrors] = useState<Partial<Record<keyof FormState, string>>>({});
   const [mode, setMode] = useState<"manual" | "paste">("manual");
@@ -94,8 +97,6 @@ export default function PostSubletPage() {
       );
     },
   });
-
-  const isCn = language === "cn";
 
   function update(field: keyof FormState, value: string) {
     setForm((prev) => ({ ...prev, [field]: value }));
@@ -182,6 +183,46 @@ export default function PostSubletPage() {
           : `Extraction failed: ${errMsg} / 提取失败：${errMsg}`
       );
     }
+  }
+
+  if (authLoading) {
+    return (
+      <div className="min-h-screen bg-neutral-50">
+        <Navbar />
+        <main className="max-w-2xl mx-auto px-4 py-8">
+          <div className="flex items-center justify-center h-48">
+            <Loader2 className="w-8 h-8 animate-spin text-neutral-400" />
+          </div>
+        </main>
+      </div>
+    );
+  }
+
+  if (!user) {
+    return (
+      <div className="min-h-screen bg-neutral-50">
+        <Navbar />
+        <main className="max-w-2xl mx-auto px-4 py-8">
+          <Card>
+            <CardContent className="p-8 text-center space-y-4">
+              <h2 className="text-xl font-semibold text-neutral-900">
+                {isCn
+                  ? "请先登录后发布短租"
+                  : "Please sign in to post a sublet"}
+              </h2>
+              <p className="text-sm text-neutral-500">
+                {isCn
+                  ? "您需要登录才能发布转租房源。"
+                  : "You need to be signed in to post a sublet listing."}
+              </p>
+              <Button onClick={signIn} className="bg-orange-500 hover:bg-orange-600 text-white">
+                {isCn ? "使用 Google 登录" : "Sign in with Google"}
+              </Button>
+            </CardContent>
+          </Card>
+        </main>
+      </div>
+    );
   }
 
   return (

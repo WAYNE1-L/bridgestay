@@ -53,7 +53,7 @@ function makePublicCtx(): TrpcContext {
   };
 }
 
-function makeAuthCtx(id = 42): TrpcContext {
+function makeAuthCtx(id = 42, role = "landlord"): TrpcContext {
   return {
     user: {
       id,
@@ -61,7 +61,7 @@ function makeAuthCtx(id = 42): TrpcContext {
       email: "user@test.com",
       name: "Test User",
       loginMethod: "manus",
-      role: "user",
+      role,
       stripeCustomerId: null,
       createdAt: new Date(),
       updatedAt: new Date(),
@@ -80,8 +80,8 @@ describe("sublets.create", () => {
   });
 
   // T1: ctx.user present → uses ctx.user.id as landlordId
-  it("T1: uses ctx.user.id when user is authenticated", async () => {
-    const ctx = makeAuthCtx(42);
+  it("T1: uses ctx.user.id when user is authenticated as landlord", async () => {
+    const ctx = makeAuthCtx(42, "landlord");
     const caller = appRouter.createCaller(ctx);
 
     const result = await caller.sublets.create(BASE_INPUT);
@@ -93,78 +93,8 @@ describe("sublets.create", () => {
     expect(db.getUserByOpenId).not.toHaveBeenCalled();
   });
 
-  // T2: no user + DEV_DEMO_MODE=true + db has demo user → uses that id + console.warn
-  it("T2: DEV_DEMO_MODE with existing demo user uses that user id and warns", async () => {
-    vi.stubEnv("DEV_DEMO_MODE", "true");
-    vi.mocked(db.getUserByOpenId).mockResolvedValue({
-      id: 77,
-      openId: "demo-sublet-landlord",
-      name: "Demo Sublet Landlord",
-      email: "demo-sublet@bridgestay.dev",
-      loginMethod: "demo",
-      role: "landlord",
-      stripeCustomerId: null,
-      createdAt: new Date(),
-      updatedAt: new Date(),
-      lastSignedIn: new Date(),
-    });
-
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const ctx = makePublicCtx();
-    const caller = appRouter.createCaller(ctx);
-
-    const result = await caller.sublets.create(BASE_INPUT);
-
-    expect(result).toEqual({ id: 101, success: true });
-    expect(db.createApartment).toHaveBeenCalledWith(
-      expect.objectContaining({ landlordId: 77 })
-    );
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("DEV_DEMO_MODE"));
-    expect(db.upsertUser).not.toHaveBeenCalled();
-
-    warnSpy.mockRestore();
-  });
-
-  // T3: no user + DEV_DEMO_MODE=true + db empty → inserts demo user
-  it("T3: DEV_DEMO_MODE with no demo user in db inserts one then uses it", async () => {
-    vi.stubEnv("DEV_DEMO_MODE", "true");
-    // First call returns undefined (not found), second call (after upsert) returns the user
-    vi.mocked(db.getUserByOpenId)
-      .mockResolvedValueOnce(undefined)
-      .mockResolvedValueOnce({
-        id: 99,
-        openId: "demo-sublet-landlord",
-        name: "Demo Sublet Landlord",
-        email: "demo-sublet@bridgestay.dev",
-        loginMethod: "demo",
-        role: "landlord",
-        stripeCustomerId: null,
-        createdAt: new Date(),
-        updatedAt: new Date(),
-        lastSignedIn: new Date(),
-      });
-
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-    const ctx = makePublicCtx();
-    const caller = appRouter.createCaller(ctx);
-
-    const result = await caller.sublets.create(BASE_INPUT);
-
-    expect(result).toEqual({ id: 101, success: true });
-    expect(db.upsertUser).toHaveBeenCalledWith(
-      expect.objectContaining({ openId: "demo-sublet-landlord", role: "landlord" })
-    );
-    expect(db.createApartment).toHaveBeenCalledWith(
-      expect.objectContaining({ landlordId: 99 })
-    );
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("no demo user found"));
-
-    warnSpy.mockRestore();
-  });
-
-  // T4: no user + DEV_DEMO_MODE != 'true' → UNAUTHORIZED
-  it("T4: throws UNAUTHORIZED when unauthenticated and DEV_DEMO_MODE is not set", async () => {
-    vi.stubEnv("DEV_DEMO_MODE", "false");
+  // T2: ctx.user is null → protectedProcedure throws UNAUTHORIZED
+  it("T2: throws UNAUTHORIZED when ctx.user is null", async () => {
     const ctx = makePublicCtx();
     const caller = appRouter.createCaller(ctx);
 
@@ -172,6 +102,30 @@ describe("sublets.create", () => {
       code: "UNAUTHORIZED",
     });
     expect(db.createApartment).not.toHaveBeenCalled();
+  });
+
+  // T3: ctx.user.role is 'student' → throws FORBIDDEN
+  it("T3: throws FORBIDDEN when ctx.user.role is 'student'", async () => {
+    const ctx = makeAuthCtx(55, "student");
+    const caller = appRouter.createCaller(ctx);
+
+    await expect(caller.sublets.create(BASE_INPUT)).rejects.toMatchObject({
+      code: "FORBIDDEN",
+    });
+    expect(db.createApartment).not.toHaveBeenCalled();
+  });
+
+  // T4: admin role is also permitted
+  it("T4: allows admin role to create a sublet", async () => {
+    const ctx = makeAuthCtx(99, "admin");
+    const caller = appRouter.createCaller(ctx);
+
+    const result = await caller.sublets.create(BASE_INPUT);
+
+    expect(result).toEqual({ id: 101, success: true });
+    expect(db.createApartment).toHaveBeenCalledWith(
+      expect.objectContaining({ landlordId: 99 })
+    );
   });
 
   // T5: field mapping — titleEn→title, contact.wechatId→wechatContact, dates as Date objects
