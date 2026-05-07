@@ -1289,7 +1289,7 @@ If nothing new can be extracted, return {"chatSummary": "聊天记录中未发�
         address: z.string().min(5).max(255),
         city: z.string().min(2).max(100),
         state: z.string().min(2).max(50),
-        zipCode: z.string().min(5).max(20),
+        zipCode: z.string().max(20).optional().default(""),
         latitude: z.number().optional(),
         longitude: z.number().optional(),
         bedrooms: z.number().min(0).max(20),
