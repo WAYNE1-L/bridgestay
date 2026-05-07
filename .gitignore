@@ -140,3 +140,11 @@ tools/lehi-scraper/node_modules/
 .env
 .env.*
 !.env.example
+
+# OMC local state
+.omc/
+app/.omc/
+
+# OMC local state
+.omc/
+app/.omc/
