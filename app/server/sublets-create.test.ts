@@ -150,6 +150,36 @@ describe("sublets.create", () => {
       })
     );
   });
+
+  // T6: images array is JSON-stringified before passing to db
+  it("T6: passes images array through to db.createApartment as JSON-stringified value", async () => {
+    const ctx = makeAuthCtx(1);
+    const caller = appRouter.createCaller(ctx);
+
+    await caller.sublets.create({
+      ...BASE_INPUT,
+      images: ["https://example.com/a.jpg", "data:image/png;base64,abc"],
+    });
+
+    expect(db.createApartment).toHaveBeenCalledWith(
+      expect.objectContaining({
+        images: '["https://example.com/a.jpg","data:image/png;base64,abc"]',
+      })
+    );
+  });
+
+  // T7: no images field → db receives images: null
+  it("T7: passes images=null to db when input has no images", async () => {
+    const ctx = makeAuthCtx(1);
+    const caller = appRouter.createCaller(ctx);
+
+    await caller.sublets.create(BASE_INPUT);
+
+    expect(db.createApartment).toHaveBeenCalledWith(
+      expect.objectContaining({ images: null })
+    );
+  });
+
 });
 
 describe("sublets.list", () => {

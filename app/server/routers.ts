@@ -1303,6 +1303,7 @@ If nothing new can be extracted, return {"chatSummary": "聊天记录中未发�
         parkingIncluded: z.boolean().default(false),
         amenities: z.array(z.string()).optional(),
         nearbyUniversities: z.array(z.string()).optional(),
+        images: z.array(z.string()).optional(),
         contact: z.object({
           wechatId: z.string().max(100).optional(),
         }).optional(),
@@ -1325,6 +1326,7 @@ If nothing new can be extracted, return {"chatSummary": "聊天记录中未发�
           availableFrom,
           subleaseEndDate,
           wechatContact: contact?.wechatId,
+          images: rest.images ? JSON.stringify(rest.images) : null,
           nearbyUniversities: rest.nearbyUniversities ? JSON.stringify(rest.nearbyUniversities) : null,
           amenities: rest.amenities ? JSON.stringify(rest.amenities) : null,
           latitude: rest.latitude?.toString(),

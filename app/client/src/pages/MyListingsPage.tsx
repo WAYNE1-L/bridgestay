@@ -101,14 +101,16 @@ export default function MyListingsPage() {
               <Card key={listing.id} className="overflow-hidden hover:shadow-md transition-shadow">
                 <div className="relative aspect-video w-full overflow-hidden bg-neutral-100">
                   <img
-                    src={`https://picsum.photos/seed/${listing.id}/640/360`}
+                    src={listing.images?.[0] || `https://picsum.photos/seed/${listing.id}/640/360`}
                     alt={listing.title}
                     className="w-full h-full object-cover"
                     loading="lazy"
                   />
-                  <span className="absolute bottom-2 right-2 bg-red-600/90 text-white text-[10px] px-1.5 py-0.5 rounded">
-                    Demo photo
-                  </span>
+                  {!listing.images?.[0] && (
+                    <span className="absolute bottom-2 right-2 bg-red-600/90 text-white text-[10px] px-1.5 py-0.5 rounded">
+                      Demo photo
+                    </span>
+                  )}
                 </div>
                 <CardContent className="p-5 space-y-3">
                   <div className="flex items-start justify-between gap-2">

@@ -22,6 +22,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { SUBLET_SOURCES } from "@/lib/subletMockData";
+import { MultiImageUpload } from "@/components/MultiImageUpload";
 import { useState } from "react";
 import { useLocation } from "wouter";
 import { Sparkles, Loader2 } from "lucide-react";
@@ -52,6 +53,7 @@ interface FormState {
   availableFrom: string;
   subleaseEndDate: string;
   source: SubletSourceKey | "";
+  images: string[];
 }
 
 const EMPTY_FORM: FormState = {
@@ -68,6 +70,7 @@ const EMPTY_FORM: FormState = {
   availableFrom: "",
   subleaseEndDate: "",
   source: "",
+  images: [],
 };
 
 const PASTE_PLACEHOLDER =
@@ -139,6 +142,7 @@ export default function PostSubletPage() {
       availableFrom: form.availableFrom,
       subleaseEndDate: form.subleaseEndDate,
       source: form.source || undefined,
+      images: form.images,
     });
   }
 
@@ -501,6 +505,20 @@ export default function PostSubletPage() {
                 {errors.source && (
                   <p className="text-xs text-red-600">{errors.source}</p>
                 )}
+              </div>
+
+              {/* Photos */}
+              <div className="space-y-1.5">
+                <Label>
+                  {isCn ? "房源照片（可选）" : "Photos (optional)"}
+                </Label>
+                <MultiImageUpload
+                  images={form.images}
+                  onChange={(imgs) => setForm((prev) => ({ ...prev, images: imgs }))}
+                  maxImages={8}
+                  maxSizeMB={10}
+                  language={language === "cn" ? "cn" : "en"}
+                />
               </div>
 
               {/* Actions */}

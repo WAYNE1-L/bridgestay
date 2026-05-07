@@ -90,6 +90,8 @@ export interface MockSublet {
   descriptionZh?: string;
   /** Whether the host themselves is a current student. */
   hostIsStudent: boolean;
+  /** Uploaded photo URLs (https:// or data:image/...). First is cover. */
+  images: string[];
 }
 
 const UOFU = { lat: 40.7649, lon: -111.8421 };
@@ -106,10 +108,11 @@ function mi(lat: number, lon: number): number {
 }
 
 function make(
-  partial: Omit<MockSublet, "distanceToUofU"> & { distanceToUofU?: number }
+  partial: Omit<MockSublet, "distanceToUofU" | "images"> & { distanceToUofU?: number; images?: string[] }
 ): MockSublet {
   return {
     distanceToUofU: mi(partial.latitude, partial.longitude),
+    images: [],
     ...partial,
   };
 }

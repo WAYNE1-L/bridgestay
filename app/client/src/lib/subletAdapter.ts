@@ -76,5 +76,6 @@ export function adaptDbRowToSublet(row: Record<string, unknown>): MockSublet {
     contact,
     description: str("description"),
     hostIsStudent: false,
+    images: arr("images"),
   };
 }
