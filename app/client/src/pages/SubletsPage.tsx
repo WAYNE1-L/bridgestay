@@ -39,6 +39,7 @@ import {
   type MockSublet,
   type SubletArea,
 } from "@/lib/subletMockData";
+import { adaptDbRowToSublet } from "@/lib/subletAdapter";
 import { ContactHostModal } from "@/components/ContactHostModal";
 import { SubletMapView } from "@/components/SubletMapView";
 import {
@@ -111,26 +112,15 @@ export default function SubletsPage() {
   const [contactSublet, setContactSublet] = useState<MockSublet | null>(null);
   const [view, setView] = useState<"list" | "map">("list");
 
-  // Try the real backend first. We don't actually rely on it returning rows
-  // in R2 — the dev DB is empty of sublets — but wiring it up here means the
-  // moment a row lands the page picks it up automatically.
-  const realQuery = trpc.apartments.list.useQuery({
-    isSublease: true,
-    limit: 50,
-    offset: 0,
-  });
+  const realQuery = trpc.sublets.list.useQuery({});
 
   const realCount = Array.isArray(realQuery.data) ? realQuery.data.length : 0;
   const usingMock = realCount === 0;
 
-  // Apply filters to the chosen dataset. Both code paths (real / mock) share
-  // the same predicate so the UX is identical regardless of source.
   const allSublets: MockSublet[] = useMemo(() => {
     if (!usingMock) {
-      // Adapt real apartment rows into the MockSublet shape so the card
-      // component can render them. We tolerate missing fields gracefully.
       const rows = (realQuery.data ?? []) as Array<Record<string, unknown>>;
-      return rows.map((row) => adaptApartmentToSublet(row));
+      return rows.map((row) => adaptDbRowToSublet(row));
     }
     return MOCK_SUBLETS;
   }, [usingMock, realQuery.data]);
@@ -662,14 +652,22 @@ function SubletCard({
                 : "Posted by host"}
           </span>
           <div className="flex items-center gap-2">
-            <Button
-              size="sm"
-              variant="default"
-              onClick={() => onContactHost(sublet)}
-            >
-              <Phone className="w-3.5 h-3.5 mr-1.5" />
-              {language === "cn" ? "联系房东" : "Contact host"}
-            </Button>
+            {sublet.source !== "manual_demo" && !sublet.wechatContact ? (
+              <span className="text-xs text-neutral-400 italic">
+                {language === "cn"
+                  ? "联系方式暂不可用"
+                  : "Contact info unavailable / 联系方式暂不可用"}
+              </span>
+            ) : (
+              <Button
+                size="sm"
+                variant="default"
+                onClick={() => onContactHost(sublet)}
+              >
+                <Phone className="w-3.5 h-3.5 mr-1.5" />
+                {language === "cn" ? "联系房东" : "Contact host"}
+              </Button>
+            )}
             <Link href={`/sublets/${sublet.id}`}>
               <Button size="sm" variant="outline">
                 {language === "cn" ? "查看详情" : "View details"}
@@ -682,67 +680,3 @@ function SubletCard({
   );
 }
 
-/** Defensively coerce a row coming from the apartments table into MockSublet shape. */
-function adaptApartmentToSublet(row: Record<string, unknown>): MockSublet {
-  const num = (k: string, fallback = 0) => {
-    const v = row[k];
-    if (typeof v === "number") return v;
-    if (typeof v === "string") {
-      const n = parseFloat(v);
-      return Number.isFinite(n) ? n : fallback;
-    }
-    return fallback;
-  };
-  const str = (k: string, fallback = ""): string => {
-    const v = row[k];
-    return typeof v === "string" ? v : fallback;
-  };
-  const arr = (k: string): string[] => {
-    const v = row[k];
-    if (Array.isArray(v)) return v.filter((x) => typeof x === "string");
-    if (typeof v === "string") {
-      try {
-        const parsed = JSON.parse(v);
-        return Array.isArray(parsed) ? parsed.filter((x) => typeof x === "string") : [];
-      } catch {
-        return [];
-      }
-    }
-    return [];
-  };
-  const dateIso = (k: string): string => {
-    const v = row[k];
-    if (v instanceof Date) return v.toISOString().slice(0, 10);
-    if (typeof v === "string") return v.slice(0, 10);
-    return new Date().toISOString().slice(0, 10);
-  };
-
-  return {
-    id: String(row.id ?? ""),
-    title: str("title", "Sublet listing"),
-    address: str("address"),
-    city: str("city", "Salt Lake City"),
-    state: str("state", "UT"),
-    zipCode: str("zipCode"),
-    area: "u_district",
-    latitude: num("latitude", 40.7649),
-    longitude: num("longitude", -111.8421),
-    monthlyRent: num("monthlyRent"),
-    securityDeposit: num("securityDeposit"),
-    bedrooms: num("bedrooms"),
-    bathrooms: num("bathrooms"),
-    squareFeet: row.squareFeet ? num("squareFeet") : null,
-    amenities: arr("amenities"),
-    subleaseEndDate: dateIso("subleaseEndDate"),
-    availableFrom: dateIso("availableFrom"),
-    petsAllowed: Boolean(row.petsAllowed),
-    parkingIncluded: Boolean(row.parkingIncluded),
-    nearbyUniversities: arr("nearbyUniversities"),
-    distanceToUofU: 0,
-    source: "manual_other",
-    wechatContact: typeof row.wechatContact === "string" ? row.wechatContact : undefined,
-    contact: { primary: "email" as const, email: "contact@bridgestay.local" },
-    description: str("description"),
-    hostIsStudent: false,
-  };
-}

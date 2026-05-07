@@ -42,6 +42,9 @@ interface FormState {
   titleZh: string;
   monthlyRent: string;
   address: string;
+  city: string;
+  state: string;
+  zipCode: string;
   bedrooms: string;
   bathrooms: string;
   squareFeet: string;
@@ -55,6 +58,9 @@ const EMPTY_FORM: FormState = {
   titleZh: "",
   monthlyRent: "",
   address: "",
+  city: "Salt Lake City",
+  state: "UT",
+  zipCode: "",
   bedrooms: "",
   bathrooms: "",
   squareFeet: "",
@@ -75,6 +81,19 @@ export default function PostSubletPage() {
   const [pasteText, setPasteText] = useState("");
 
   const parseFromText = trpc.sublets.parseFromText.useMutation();
+  const createSublet = trpc.sublets.create.useMutation({
+    onSuccess(result) {
+      toast.success(isCn ? "发布成功！/ Posted successfully!" : "Posted successfully! / 发布成功！");
+      setLocation(`/sublets/${result.id}`);
+    },
+    onError(err) {
+      toast.error(
+        isCn
+          ? `发布失败：${err.message} / Failed: ${err.message}`
+          : `Failed: ${err.message} / 发布失败：${err.message}`
+      );
+    },
+  });
 
   const isCn = language === "cn";
 
@@ -104,21 +123,22 @@ export default function PostSubletPage() {
     e.preventDefault();
     if (!validate()) return;
 
-    const data = {
-      title: form.title.trim(),
+    createSublet.mutate({
+      titleEn: form.title.trim(),
       titleZh: form.titleZh.trim() || undefined,
       monthlyRent: Number(form.monthlyRent),
       address: form.address.trim(),
+      city: form.city.trim() || "Salt Lake City",
+      state: form.state.trim() || "UT",
+      zipCode: form.zipCode.trim() || "",
+      securityDeposit: Number(form.monthlyRent),
       bedrooms: Number(form.bedrooms),
       bathrooms: Number(form.bathrooms),
       squareFeet: form.squareFeet ? Number(form.squareFeet) : undefined,
       availableFrom: form.availableFrom,
       subleaseEndDate: form.subleaseEndDate,
-      source: form.source,
-    };
-
-    console.log("New sublet posted:", data);
-    setLocation("/sublets");
+      source: form.source || undefined,
+    });
   }
 
   async function handleExtract() {
@@ -444,8 +464,15 @@ export default function PostSubletPage() {
 
               {/* Actions */}
               <div className="flex gap-3 pt-2">
-                <Button type="submit" className="flex-1">
-                  {isCn ? "发布转租" : "Post Sublet"}
+                <Button type="submit" className="flex-1" disabled={createSublet.isPending}>
+                  {createSublet.isPending ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      {isCn ? "发布中…" : "Posting…"}
+                    </>
+                  ) : (
+                    isCn ? "发布转租" : "Post Sublet"
+                  )}
                 </Button>
                 <Button
                   type="button"

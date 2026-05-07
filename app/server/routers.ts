@@ -1278,6 +1278,108 @@ If nothing new can be extracted, return {"chatSummary": "聊天记录中未发�
         const { parseSubletText } = await import("./sublets-parser");
         return await parseSubletText(input.text);
       }),
+
+    // TODO(R7): switch to protectedProcedure once auth is enforced for sublet posting.
+    create: publicProcedure
+      .input(z.object({
+        titleEn: z.string().min(5).max(255),
+        titleZh: z.string().optional(),
+        source: z.string().optional(),
+        description: z.string().optional(),
+        address: z.string().min(5).max(255),
+        city: z.string().min(2).max(100),
+        state: z.string().min(2).max(50),
+        zipCode: z.string().min(5).max(20),
+        latitude: z.number().optional(),
+        longitude: z.number().optional(),
+        bedrooms: z.number().min(0).max(20),
+        bathrooms: z.number().min(0).max(20),
+        squareFeet: z.number().optional(),
+        monthlyRent: z.number().min(0),
+        securityDeposit: z.number().min(0),
+        availableFrom: z.string().transform(s => new Date(s)),
+        subleaseEndDate: z.string().optional().transform(s => s ? new Date(s) : undefined),
+        petsAllowed: z.boolean().default(false),
+        parkingIncluded: z.boolean().default(false),
+        amenities: z.array(z.string()).optional(),
+        nearbyUniversities: z.array(z.string()).optional(),
+        contact: z.object({
+          wechatId: z.string().max(100).optional(),
+        }).optional(),
+      }))
+      .mutation(async ({ ctx, input }) => {
+        let landlordId: number;
+
+        if (ctx.user) {
+          landlordId = ctx.user.id;
+        } else if (process.env.DEV_DEMO_MODE === "true") {
+          // DEV_DEMO_MODE: find or create a demo user
+          const DEMO_OPEN_ID = "demo-sublet-landlord";
+          let demoUser = await db.getUserByOpenId(DEMO_OPEN_ID);
+          if (!demoUser) {
+            console.warn("[sublets.create] DEV_DEMO_MODE: no demo user found, inserting one");
+            await db.upsertUser({
+              openId: DEMO_OPEN_ID,
+              name: "Demo Sublet Landlord",
+              email: "demo-sublet@bridgestay.dev",
+              loginMethod: "demo",
+              role: "landlord",
+            });
+            demoUser = await db.getUserByOpenId(DEMO_OPEN_ID);
+          }
+          if (!demoUser) {
+            throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Failed to resolve demo user" });
+          }
+          console.warn(`[sublets.create] DEV_DEMO_MODE: using demo landlord id=${demoUser.id}`);
+          landlordId = demoUser.id;
+        } else {
+          throw new TRPCError({ code: "UNAUTHORIZED", message: "Authentication required to post a sublet" });
+        }
+
+        const { contact, titleEn, titleZh: _titleZh, source: _source, availableFrom, subleaseEndDate, ...rest } = input;
+        const id = await db.createApartment({
+          ...rest,
+          title: titleEn,
+          propertyType: "apartment",
+          isSublease: true,
+          landlordId,
+          status: "draft",
+          availableFrom,
+          subleaseEndDate,
+          wechatContact: contact?.wechatId,
+          nearbyUniversities: rest.nearbyUniversities ? JSON.stringify(rest.nearbyUniversities) : null,
+          amenities: rest.amenities ? JSON.stringify(rest.amenities) : null,
+          latitude: rest.latitude?.toString(),
+          longitude: rest.longitude?.toString(),
+          monthlyRent: rest.monthlyRent.toString(),
+          securityDeposit: rest.securityDeposit.toString(),
+          bathrooms: rest.bathrooms.toString(),
+          applicationFee: "0",
+        } as any);
+
+        if (!id) {
+          throw new TRPCError({ code: "INTERNAL_SERVER_ERROR", message: "Sublet could not be saved — database may be unavailable." });
+        }
+
+        return { id, success: true };
+      }),
+
+    // TODO(R7): add auth/ownership filtering.
+    list: publicProcedure
+      .input(apartmentFiltersSchema)
+      .query(async ({ input }) => {
+        const { limit, offset, ...filters } = input;
+        return await db.getApartments({ ...filters, isSublease: true }, limit, offset);
+      }),
+
+    // TODO(R7): add auth/ownership filtering.
+    getById: publicProcedure
+      .input(z.object({ id: z.number() }))
+      .query(async ({ input }) => {
+        const apartment = await db.getApartmentById(input.id);
+        if (!apartment || !apartment.isSublease) return null;
+        return apartment;
+      }),
   }),
 
   // ============ PROMOTIONS ============

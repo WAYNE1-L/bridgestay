@@ -22,6 +22,8 @@ import {
   SUBLET_SOURCES,
   type MockSublet,
 } from "@/lib/subletMockData";
+import { adaptDbRowToSublet } from "@/lib/subletAdapter";
+import { trpc } from "@/lib/trpc";
 import {
   ArrowLeft,
   Bath,
@@ -30,6 +32,7 @@ import {
   ChevronLeft,
   ChevronRight,
   GraduationCap,
+  Loader2,
   MapPin,
   PawPrint,
   ParkingCircle,
@@ -61,13 +64,45 @@ function fmtDate(iso: string): string {
 export default function SubletDetailPage() {
   const params = useParams<{ id: string }>();
   const id = params.id;
-  const sublet = MOCK_SUBLETS.find((s) => s.id === id);
 
-  if (!sublet) {
-    return <SubletNotFound id={id} />;
+  const numericId = id && /^\d+$/.test(id) ? Number(id) : null;
+
+  const dbQuery = trpc.sublets.getById.useQuery(
+    { id: numericId! },
+    { enabled: numericId !== null }
+  );
+
+  if (numericId !== null) {
+    if (dbQuery.isLoading) {
+      return <SubletLoading />;
+    }
+    if (dbQuery.error || dbQuery.data === null) {
+      return <SubletNotFound id={id} />;
+    }
+    if (dbQuery.data) {
+      const sublet = adaptDbRowToSublet(dbQuery.data as Record<string, unknown>);
+      return <SubletFound sublet={sublet} isMock={false} />;
+    }
+    return <SubletLoading />;
   }
 
-  return <SubletFound sublet={sublet} />;
+  // Non-numeric id: look up in mock data
+  const mockSublet = id ? MOCK_SUBLETS.find((s) => s.id === id) : undefined;
+  if (!mockSublet) {
+    return <SubletNotFound id={id} />;
+  }
+  return <SubletFound sublet={mockSublet} isMock={true} />;
+}
+
+function SubletLoading() {
+  return (
+    <div className="min-h-screen bg-neutral-50">
+      <Navbar />
+      <main className="container pt-28 pb-16 max-w-4xl flex items-center justify-center">
+        <Loader2 className="w-8 h-8 animate-spin text-neutral-400" />
+      </main>
+    </div>
+  );
 }
 
 function SubletNotFound({ id }: { id?: string }) {
@@ -185,20 +220,24 @@ function SubletGallery({ id }: { id: string }) {
   );
 }
 
-function SubletFound({ sublet }: { sublet: MockSublet }) {
+function SubletFound({ sublet, isMock }: { sublet: MockSublet; isMock: boolean }) {
   const { language } = useLanguage();
   const sourceMeta = SUBLET_SOURCES[sublet.source];
   const areaMeta = SUBLET_AREAS.find((a) => a.id === sublet.area);
   const [contactOpen, setContactOpen] = useState(false);
 
+  const hasContact = isMock || Boolean(sublet.wechatContact);
+
   return (
     <div className="min-h-screen bg-neutral-50">
       <Navbar />
-      <ContactHostModal
-        sublet={sublet}
-        open={contactOpen}
-        onClose={() => setContactOpen(false)}
-      />
+      {hasContact && (
+        <ContactHostModal
+          sublet={sublet}
+          open={contactOpen}
+          onClose={() => setContactOpen(false)}
+        />
+      )}
       <main className="container pt-28 pb-16 space-y-6 max-w-4xl">
         {/* Back link */}
         <Link href="/sublets">
@@ -208,8 +247,8 @@ function SubletFound({ sublet }: { sublet: MockSublet }) {
           </Button>
         </Link>
 
-        {/* Mock data banner — site-wide rule for any mock-backed view */}
-        <MockDataBanner source="curated UofU-area examples" />
+        {/* Mock data banner — only for mock-backed views */}
+        {isMock && <MockDataBanner source="curated UofU-area examples" />}
 
         {/* Header card: title, address, source */}
         <Card>
@@ -251,14 +290,22 @@ function SubletFound({ sublet }: { sublet: MockSublet }) {
             </div>
 
             <div className="pt-2">
-              <Button
-                variant="default"
-                onClick={() => setContactOpen(true)}
-                className="w-full sm:w-auto"
-              >
-                <Phone className="w-4 h-4 mr-2" />
-                {language === "cn" ? "联系房东" : "Contact host"}
-              </Button>
+              {hasContact ? (
+                <Button
+                  variant="default"
+                  onClick={() => setContactOpen(true)}
+                  className="w-full sm:w-auto"
+                >
+                  <Phone className="w-4 h-4 mr-2" />
+                  {language === "cn" ? "联系房东" : "Contact host"}
+                </Button>
+              ) : (
+                <p className="text-sm text-neutral-400 italic">
+                  {language === "cn"
+                    ? "联系方式暂不可用 / Contact info unavailable"
+                    : "Contact info unavailable / 联系方式暂不可用"}
+                </p>
+              )}
             </div>
           </CardContent>
         </Card>
