@@ -48,6 +48,7 @@ import {
   Bath,
   CalendarDays,
   GraduationCap,
+  ImageIcon,
   MapPin,
   Phone,
   Search,
@@ -512,6 +513,7 @@ export default function SubletsPage() {
                     onContactHost={setContactSublet}
                     isSignedIn={Boolean(user)}
                     onSignIn={signIn}
+                    isMock={usingMock}
                   />
                 ))}
               </div>
@@ -529,31 +531,50 @@ function SubletCard({
   onContactHost,
   isSignedIn,
   onSignIn,
+  isMock,
 }: {
   sublet: MockSublet;
   language: "en" | "cn";
   onContactHost: (sublet: MockSublet) => void;
   isSignedIn: boolean;
   onSignIn: () => void;
+  isMock: boolean;
 }) {
   const days = daysUntil(sublet.subleaseEndDate);
   const sourceMeta = SUBLET_SOURCES[sublet.source];
   const areaMeta = SUBLET_AREAS.find((a) => a.id === sublet.area);
+  const heroImage = sublet.images?.[0];
 
   return (
     <Card className="overflow-hidden hover:shadow-md transition-shadow group">
       {/* Hero image */}
       <div className="relative aspect-video w-full overflow-hidden bg-neutral-100">
-        <img
-          src={sublet.images?.[0] || `https://picsum.photos/seed/${sublet.id}/640/360`}
-          alt={sublet.title}
-          className="w-full h-full object-cover"
-          loading="lazy"
-        />
-        {!sublet.images?.[0] && (
-          <span className="absolute bottom-2 right-2 bg-red-600/90 text-white text-[10px] px-1.5 py-0.5 rounded">
-            Demo photo
-          </span>
+        {heroImage ? (
+          <img
+            src={heroImage}
+            alt={sublet.title}
+            className="w-full h-full object-cover"
+            loading="lazy"
+          />
+        ) : isMock ? (
+          <>
+            <img
+              src={`https://picsum.photos/seed/${sublet.id}/640/360`}
+              alt={sublet.title}
+              className="w-full h-full object-cover"
+              loading="lazy"
+            />
+            <span className="absolute bottom-2 right-2 bg-red-600/90 text-white text-[10px] px-1.5 py-0.5 rounded">
+              Demo photo
+            </span>
+          </>
+        ) : (
+          <div className="w-full h-full bg-gradient-to-br from-neutral-100 to-neutral-200 flex flex-col items-center justify-center gap-1.5">
+            <ImageIcon className="w-8 h-8 text-neutral-400" />
+            <p className="text-xs text-neutral-500">
+              {language === "cn" ? "暂无图片" : "No photos"}
+            </p>
+          </div>
         )}
       </div>
       <CardContent className="p-5 space-y-3">

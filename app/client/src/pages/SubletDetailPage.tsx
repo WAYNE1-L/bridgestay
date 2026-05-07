@@ -33,6 +33,7 @@ import {
   ChevronLeft,
   ChevronRight,
   GraduationCap,
+  ImageIcon,
   Loader2,
   MapPin,
   PawPrint,
@@ -140,83 +141,107 @@ function SubletNotFound({ id }: { id?: string }) {
   );
 }
 
-function SubletGallery({ id }: { id: string }) {
-  const images = [
-    `https://picsum.photos/seed/${id}/1200/675`,
-    `https://picsum.photos/seed/${id}-2/1200/675`,
-    `https://picsum.photos/seed/${id}-3/1200/675`,
-    `https://picsum.photos/seed/${id}-4/1200/675`,
-  ];
+function SubletGallery({ id, images, isMock }: { id: string; images: string[]; isMock: boolean }) {
+  // Mock listings still use deterministic picsum so curated examples have visuals.
+  // Real listings render uploaded images, or a clean placeholder if none.
+  const fallbackImages = isMock
+    ? [
+        `https://picsum.photos/seed/${id}/1200/675`,
+        `https://picsum.photos/seed/${id}-2/1200/675`,
+        `https://picsum.photos/seed/${id}-3/1200/675`,
+        `https://picsum.photos/seed/${id}-4/1200/675`,
+      ]
+    : [];
+  const displayImages = images.length > 0 ? images : fallbackImages;
   const [active, setActive] = useState(0);
 
-  const prev = () => setActive((i) => (i - 1 + images.length) % images.length);
-  const next = () => setActive((i) => (i + 1) % images.length);
+  const prev = () => setActive((i) => (i - 1 + displayImages.length) % displayImages.length);
+  const next = () => setActive((i) => (i + 1) % displayImages.length);
+
+  if (displayImages.length === 0) {
+    return (
+      <div className="relative aspect-video w-full overflow-hidden rounded-xl bg-gradient-to-br from-neutral-100 to-neutral-200 flex flex-col items-center justify-center gap-2">
+        <ImageIcon className="w-12 h-12 text-neutral-400" />
+        <p className="text-sm text-neutral-500">No photos uploaded</p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-2">
       {/* Main image */}
       <div className="relative aspect-video w-full overflow-hidden rounded-xl bg-neutral-100">
         <img
-          key={images[active]}
-          src={images[active]}
+          key={displayImages[active]}
+          src={displayImages[active]}
           alt={`Photo ${active + 1}`}
           className="w-full h-full object-cover"
           loading="lazy"
         />
-        {/* Demo badge */}
-        <span className="absolute bottom-3 right-3 bg-red-600/90 text-white text-[10px] px-1.5 py-0.5 rounded">
-          Demo photo
-        </span>
-        {/* Prev / next */}
-        <button
-          type="button"
-          onClick={prev}
-          className="absolute left-3 top-1/2 -translate-y-1/2 p-2 rounded-full bg-black/40 hover:bg-black/60 text-white transition-colors"
-          aria-label="Previous photo"
-        >
-          <ChevronLeft className="w-5 h-5" />
-        </button>
-        <button
-          type="button"
-          onClick={next}
-          className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-full bg-black/40 hover:bg-black/60 text-white transition-colors"
-          aria-label="Next photo"
-        >
-          <ChevronRight className="w-5 h-5" />
-        </button>
-        {/* Dot indicators */}
-        <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5">
-          {images.map((_, i) => (
+        {/* Demo badge — only when we're rendering picsum fallback for a mock listing */}
+        {isMock && (
+          <span className="absolute bottom-3 right-3 bg-red-600/90 text-white text-[10px] px-1.5 py-0.5 rounded">
+            Demo photo
+          </span>
+        )}
+        {/* Prev / next — only show when more than one image */}
+        {displayImages.length > 1 && (
+          <>
             <button
-              key={i}
               type="button"
+              onClick={prev}
+              className="absolute left-3 top-1/2 -translate-y-1/2 p-2 rounded-full bg-black/40 hover:bg-black/60 text-white transition-colors"
+              aria-label="Previous photo"
+            >
+              <ChevronLeft className="w-5 h-5" />
+            </button>
+            <button
+              type="button"
+              onClick={next}
+              className="absolute right-3 top-1/2 -translate-y-1/2 p-2 rounded-full bg-black/40 hover:bg-black/60 text-white transition-colors"
+              aria-label="Next photo"
+            >
+              <ChevronRight className="w-5 h-5" />
+            </button>
+            {/* Dot indicators */}
+            <div className="absolute bottom-3 left-1/2 -translate-x-1/2 flex gap-1.5">
+              {displayImages.map((_, i) => (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => setActive(i)}
+                  className={`w-2 h-2 rounded-full transition-colors ${i === active ? "bg-white" : "bg-white/50"}`}
+                  aria-label={`Go to photo ${i + 1}`}
+                />
+              ))}
+            </div>
+          </>
+        )}
+      </div>
+      {/* Thumbnail strip — only when more than one image */}
+      {displayImages.length > 1 && (
+        <div className="grid grid-cols-4 gap-2">
+          {displayImages.map((src, i) => (
+            <div
+              key={i}
+              className="relative aspect-video overflow-hidden rounded-md cursor-pointer"
               onClick={() => setActive(i)}
-              className={`w-2 h-2 rounded-full transition-colors ${i === active ? "bg-white" : "bg-white/50"}`}
-              aria-label={`Go to photo ${i + 1}`}
-            />
+            >
+              <img
+                src={src}
+                alt={`Thumbnail ${i + 1}`}
+                className={`w-full h-full object-cover transition-opacity ${i === active ? "opacity-100 ring-2 ring-orange-500" : "opacity-70 hover:opacity-90"}`}
+                loading="lazy"
+              />
+              {isMock && (
+                <span className="absolute bottom-1 right-1 bg-red-600/90 text-white text-[9px] px-1 py-0.5 rounded leading-none">
+                  Demo
+                </span>
+              )}
+            </div>
           ))}
         </div>
-      </div>
-      {/* Thumbnail strip */}
-      <div className="grid grid-cols-4 gap-2">
-        {images.map((src, i) => (
-          <div
-            key={i}
-            className="relative aspect-video overflow-hidden rounded-md cursor-pointer"
-            onClick={() => setActive(i)}
-          >
-            <img
-              src={src}
-              alt={`Thumbnail ${i + 1}`}
-              className={`w-full h-full object-cover transition-opacity ${i === active ? "opacity-100 ring-2 ring-orange-500" : "opacity-70 hover:opacity-90"}`}
-              loading="lazy"
-            />
-            <span className="absolute bottom-1 right-1 bg-red-600/90 text-white text-[9px] px-1 py-0.5 rounded leading-none">
-              Demo
-            </span>
-          </div>
-        ))}
-      </div>
+      )}
     </div>
   );
 }
@@ -325,7 +350,7 @@ function SubletFound({ sublet, isMock }: { sublet: MockSublet; isMock: boolean }
         </Card>
 
         {/* Photo gallery */}
-        <SubletGallery id={sublet.id} />
+        <SubletGallery id={sublet.id} images={sublet.images ?? []} isMock={isMock} />
 
         {/* Specs: bed/bath/sqft */}
         <Card>

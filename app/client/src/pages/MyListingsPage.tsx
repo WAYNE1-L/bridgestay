@@ -32,6 +32,7 @@ import {
   Edit,
   Trash2,
   CheckCircle,
+  ImageIcon,
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
@@ -230,16 +231,20 @@ export default function MyListingsPage() {
             {listings.map(({ adapted: listing, status, rawId }) => (
               <Card key={listing.id} className="overflow-hidden hover:shadow-md transition-shadow">
                 <div className="relative aspect-video w-full overflow-hidden bg-neutral-100">
-                  <img
-                    src={listing.images?.[0] || `https://picsum.photos/seed/${listing.id}/640/360`}
-                    alt={listing.title}
-                    className="w-full h-full object-cover"
-                    loading="lazy"
-                  />
-                  {!listing.images?.[0] && (
-                    <span className="absolute bottom-2 right-2 bg-red-600/90 text-white text-[10px] px-1.5 py-0.5 rounded">
-                      Demo photo
-                    </span>
+                  {listing.images?.[0] ? (
+                    <img
+                      src={listing.images[0]}
+                      alt={listing.title}
+                      className="w-full h-full object-cover"
+                      loading="lazy"
+                    />
+                  ) : (
+                    <div className="w-full h-full bg-gradient-to-br from-neutral-100 to-neutral-200 flex flex-col items-center justify-center gap-1.5">
+                      <ImageIcon className="w-8 h-8 text-neutral-400" />
+                      <p className="text-xs text-neutral-500">
+                        {isCn ? "暂无图片" : "No photos"}
+                      </p>
+                    </div>
                   )}
                 </div>
                 <CardContent className="p-5 space-y-3">
