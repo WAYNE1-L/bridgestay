@@ -246,6 +246,21 @@ export const appRouter = router({
         return { success: true, status: "archived" as const };
       }),
 
+    markRented: protectedProcedure
+      .input(z.object({ id: z.number().int().positive() }))
+      .mutation(async ({ ctx, input }) => {
+        const apartment = await db.getApartmentById(input.id);
+        if (!apartment) {
+          throw new TRPCError({ code: "NOT_FOUND", message: "Apartment not found" });
+        }
+        if (apartment.landlordId !== ctx.user.id && ctx.user.role !== "admin") {
+          throw new TRPCError({ code: "FORBIDDEN", message: "Not authorized to mark this listing as rented" });
+        }
+
+        await db.updateApartment(input.id, { status: "archived" });
+        return { success: true, status: "archived" as const };
+      }),
+
     updateOutreach: adminProcedure
       .input(z.object({
         id: z.number(),
